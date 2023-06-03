@@ -2,8 +2,8 @@
 #include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include <stdlib.h>
@@ -16,10 +16,6 @@
 
 int main(int argc, char** argv)
 {
-
-
-
-
   (void)argc;  // TODO: Remove cast and parse arguments.
   (void)argv;  // TODO: Remove cast and parse arguments.
   int s_tcp;

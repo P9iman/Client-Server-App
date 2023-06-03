@@ -1,4 +1,0 @@
-/home/guest/Downloads/template/CMakeFiles/rebuild_cache.dir
-/home/guest/Downloads/template/CMakeFiles/edit_cache.dir
-/home/guest/Downloads/template/CMakeFiles/server.dir
-/home/guest/Downloads/template/CMakeFiles/client.dir
