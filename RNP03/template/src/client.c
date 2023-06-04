@@ -12,13 +12,11 @@
 #define SRV_ADDRESS "127.0.0.1"
 #define SRV_PORT 7777
 
-
-
 int main(int argc, char** argv)
 {
   (void)argc;  // TODO: Remove cast and parse arguments.
   (void)argv;  // TODO: Remove cast and parse arguments.
-  int s_tcp;
+  int s_tcp; 
   struct sockaddr_in sa;
   unsigned int sa_len = sizeof(struct sockaddr_in);
   ssize_t n = 0;
