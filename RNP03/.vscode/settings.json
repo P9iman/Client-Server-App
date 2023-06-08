@@ -2,5 +2,14 @@
     "files.exclude": {
         "**/.*": true
     },
-    "editor.fontSize": 12
+    "editor.fontSize": 12,
+    "files.associations": {
+        "utsname.h": "c",
+        "stdlib.h": "c"
+    },
+    "C_Cpp.errorSquiggles": "disabled",
+    "C_Cpp.codeAnalysis.clangTidy.checks.disabled": [
+        "clang-diagnostic-error",
+        "clang-diagnostic-error"
+    ]
 }

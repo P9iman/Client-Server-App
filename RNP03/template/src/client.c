@@ -1,21 +1,55 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <netdb.h>
 
+#include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 
 // TODO: Remove this block.
 #define SRV_ADDRESS "127.0.0.1"
 #define SRV_PORT 7777
 
+
+
 int main(int argc, char** argv)
-{
-  (void)argc;  // TODO: Remove cast and parse arguments.
-  (void)argv;  // TODO: Remove cast and parse arguments.
+{ 
+  /*Parse Server-Kontakt: also DNS-Name oder IPv4/IPv6 Adresse sowie Port des Servers*/
+  
+  //Der Port von dem Server über dem Nachrichten ausgetauscht werden 
+  int port = 0; 
+  //Die IPv4/IPv6 Adresse oder DNS-Name nur für Ausgabe
+  char *serverAddr = NULL; 
+
+  if(argc != 3) //argc muss 3 sein da der Programmname immer das erste Argument ist, dann kommen DNS-Name/IPv4/6 (1. Argument) und Port (2. Argument)
+  {
+      printf("Connecting failed!\nUsage: ./server [DNS-Name or IPv4/IPv6 Address] [Port]\n"); 
+      return 1; 
+  }else
+  {
+      serverAddr = argv[1]; 
+      port = atoi(argv[2]); //konvertiert String zu int
+      printf("Connecting to %s on Port %d ...\n", serverAddr, port);  
+  }
+
+  /*
+    int getaddrinfo(const char *node,
+                    // e.g. "www.example.com" or IP
+                    const char *service, // e.g. "http" or port number
+                    const struct addrinfo *hints,
+                    struct addrinfo **res);
+  
+  */
+  int retVal; 
+  struct addrinfo hints; 
+  struct addrinfo *serverInfo;  
+  memset(&hints, 0, sizeof hints); 
+  hints.ai_family = AF_UNSPEC; //Adress-Family ist unspezifiziert somit IPv
+  
+
   int s_tcp; 
   struct sockaddr_in sa;
   unsigned int sa_len = sizeof(struct sockaddr_in);

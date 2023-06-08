@@ -1,12 +1,14 @@
-#include <arpa/inet.h>
-#include <netinet/in.h>
 #include <stdio.h>
-#include <sys/socket.h>
-#include <sys/types.h>
 #include <unistd.h>
-#include <sys/select.h>
 #include <string.h>
 #include <time.h>
+#include <stdlib.h>
+
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/select.h>
 #include <sys/utsname.h>
 
 #define DEFAULT_PORT 0
@@ -17,83 +19,120 @@ void handleGet(char *arg, int socketFd);
 void handlePut(char *arg, int socketFd, int dataLength);
 void* handleQuit(char *arg);
 
-uint16_t serverPort = 0;
+
 char clientAddress[INET_ADDRSTRLEN]; 
 struct utsname serverHostname;
 
 int main(int argc, char** argv)
 {
-	//Port auslesen
-	if(argc == 0)
-	{
-		serverPort = DEFAULT_PORT;
-	}else
-	{
-		serverPort = *(argv[0]);
-	}
- 
-	// Gib dem Serverhost einen Namen
-	if (uname(&serverHostname) == -1) 
+	//TODO: Lieber getnameinfo benutzten 
+
+	//Speicher den Serverhostname in serverHostname ab. 
+	if(uname(&serverHostname) == -1) 
 	{
         perror("Error in uname");
         return 1;    
     } 
 
-	/**
-	 * s_tcp = ist der FD für den Socket für die TCP-Verbindung
-	 * news = Socket der beim accept erzeugt wird. Kommunikation mit client läuft über diesen Socket. 
-	*/
-	int s_tcp, news;
-	/**
-	 * Socket werden durch eine Portnummer und eine IP-Adresse repräsentiert. 
-	 * sa = die Socketadresse vom Server
-	 * sa_client = die Socketadresse vom Client
-	 */
-	struct sockaddr_in sa, sa_client;
-	//laenge der Socket-Adresse
-	unsigned int sa_len = sizeof(struct sockaddr_in);
-	char info[256];
+	//Der Port von dem Server über dem Nachrichten ausgetauscht werden 
+	char* serverPort;
 
-	//zugehörige Adressfamilie des Netzwerks, hier Adressfamilie Internetadresse (IPv4)
-	sa.sin_family = AF_INET;
-	//setze die Portnummer in das struct für den Server
-	sa.sin_port = htons(serverPort);
+	if(argc > 2)
+	{
+		printf("Starting server failed!\nUsage: ./server [Port]\n"); 
+      	return 1; 
+	}else 
+	if(args == 2)
+	{
+		serverPort = argv[1]; 
+	}else
+	{
+		serverPort = DEFAULT_PORT; 
+	}
+	
+	/*Konfiguriere Socket*/
+
+	/* 
+		int getaddrinfo(const char *node,	  // e.g. "www.example.com" or IP
+						const char *service, // e.g. "http" or port number
+						const struct addrinfo *hints,
+						struct addrinfo **res);				
+  	*/
+
+	int getddrinfoRetVal; 
+	struct addrinfo hints; 
+  	struct addrinfo *serverInfo;  
+  	memset(&hints, 0, sizeof hints); 
+  	hints.ai_family = AF_UNSPEC; //Adress-Family ist unspezifiziert somit IPv4 und IPv6 möglich
+	hints.ai_socktype = SOCK_STREAM; 
+	hints.ai_flags = AI_PASSIVE; //befüllt die IP Adresse fuer mich
 	
 	/**
-	 * Vergabe von Wildcard IP-Adresse (ungueltige IP-Addr) damit
-	 * signalisiert wird dass Verbindungen auf allen IP-Adressen akzeptiert werden sollen
+	 * Als hostname wird hier NULL übergeben, abhängig von den ai_flags
+	 * wird die IP-Adresse 0.0.0.0 oder 127.0.0.1 verwendet.
 	*/
-	sa.sin_addr.s_addr = INADDR_ANY;
+	if((getddrinfoRetVal = getaddrinfo(NULL,serverPort, &hints, serverInfo)) != 0)
+	{
+		fprintf(stderr, "getaddrinfo error: %s\n", strerror(getddrinfoRetVal));
+		return 1; 
+	}
+	
+	//TODO: Iteriere über die LinkedList serverInfo um zu prüfen das getaddrinfo 
+	//		die Struct und andere Elemente korrekt gefüllt hat. 
 
-	//FD bzw Handle auf das Socket wird erzeugt. 
-	if ((s_tcp = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) 
+
+	/*Erzeuge Socket mit socket()*/
+
+	/**
+	 * sfd_listener = Socket-Diskreptor für listening
+	 * sfd_communication = Socket-Diskreptor für Kommunikation mit clients 
+	*/
+	int sfd_listener, sfd_communication;
+
+	sfd_listener = socket(serverInfo->ai_family, serverInfo->ai_socktype, serverInfo->ai_protocol); 
+	if(sfd_listener < 0)
 	{
 		perror("TCP Socket");
 		return 1;
 	}
 
-	//Der Socket wird mit der Funktion bind() an die Serveradresse gebunden.	
-	if (bind(s_tcp, (struct sockaddr*)&sa, sa_len) < 0) 
+	////sa = die Socketadresse vom Server 
+	// struct sockaddr_in sa;  
+	//// Host-to-Networkbyteorder und setze die Portnummer in das struct für den Server
+	// sa.sin_port = htons(serverPort);
+	// sa.sin_addr.s_addr = INADDR_ANY;
+	// if ((sfd_listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) 
+	// {
+	// 	perror("TCP Socket");
+	// 	return 1;
+	// }
+	//hier Internetadressfamilie = IPv4 
+	// sa.sin_family = AF_INET;
+
+	/*Bind den erzeugten Socket mit einem Port*/
+
+	if(bind(sfd_listener, (struct sockaddr*)serverInfo->ai_addr, serverInfo->ai_addrlen) != 0)
 	{
 		perror("bind");
 		return 1;
 	}
 
-	//gebe den Port vom Socket aus der durch das BS zugewiesen wurde
-	printf("Portnummer: %d\n", sa.sin_port); 
+	/* Warte mit listen() auf eingehende Verbindungen */
 
 	//Nun hört der Server an seinem Socket auf Verbindungsanfrangen
-	if (listen(s_tcp, 5) < 0) 
+	if (listen(sfd_listener, 5) < 0) 
 	{
 		perror("listen");
-		close(s_tcp);
+		close(sfd_listener);
 		return 1;
 	}
 	// TODO: Check port in use and print it.
 	printf("Waiting for TCP connections ... \n");
 
-	//Ab hier ist der Server im listening Zustand
 	
+
+	/*Ab hier ist der Server im listening Zustand*/
+
 /* 	int retVal = 0; 
 	int max_fd = 0;
 	//In diesem FD Set werden alle File-Descriptoren gespeichert um auf Veränderungen dieser fd zu reagieren 
@@ -113,9 +152,15 @@ int main(int argc, char** argv)
     if (fd2 > max_fd)
         max_fd = fd2;
  */
+
+
+	//sa_client = die Socketadresse vom Client
+	struct sockaddr_in sa_client;
+	char info[256];
+	unsigned int sa_len = sizeof(struct sockaddr_in);
 	while (1) 
 	{
-		//Hier select auf das fd_set aufrufen um einen fd auszuwählen der ready ist. 
+		//TODO Hier select auf das fd_set aufrufen um einen fd auszuwählen der ready ist. 
 		/*nfds = der fd der, der größte aus allen fd_sets ist + 1*/
 /* 		if((retVal =  select(0, NULL, NULL, NULL, NULL)) == -1)
 		{
@@ -131,10 +176,10 @@ int main(int argc, char** argv)
  */
 
 		//für jede akzeptierte Verbindung wird ein neuer Socket erstellt. In news ist der FD auf diesen neuen Socket
-		if ((news = accept(s_tcp, (struct sockaddr*)&sa_client, &sa_len)) < 0) 
+		if ((sfd_communication = accept(sfd_listener, (struct sockaddr*)&sa_client, &sa_len)) < 0) 
 		{
 			perror("accept");
-			close(s_tcp);
+			close(sfd_listener);
 			return 1;
 		}
 
@@ -146,7 +191,7 @@ int main(int argc, char** argv)
 		inet_ntop_retVal == NULL ? perror("Fehler beim Konvertieren der Adresse") : printf("Client verbunden mit dieser Adresse: %s\n", clientAddress); 
 		
 
-		if (recv(news, info, sizeof(info), 0))
+		if (recv(sfd_communication, info, sizeof(info), 0))
 		{
 			printf("Message received: %s \n", info);
 			if(info == NULL)
@@ -158,11 +203,11 @@ int main(int argc, char** argv)
 			//Hier werden auf die eingehenden Nachrichten reagiert --> Handle-Methoden
 			if(strncmp("Get", info, 4) == 0)
 			{
-				handleGet(info, news); 
+				handleGet(info, sfd_communication); 
 			}else
 			if(strncmp("Put", info, 4) == 0)
 			{
-				handlePut(info, news, sizeof(info)); 
+				handlePut(info, sfd_communication, sizeof(info)); 
 			}else
 			if(strncmp("Files", info, 5) == 0)
 			{
@@ -183,8 +228,10 @@ int main(int argc, char** argv)
 			}
 		}
 	}
-
-	close(s_tcp);
+	close(sfd_listener);
+	//TODO: Muss freeaddrinfo() vor oder nach close aufgerufen werden 
+	freeaddrinfo(serverInfo);
+	return 0; 
 }
 
 /**
@@ -205,54 +252,73 @@ void handleGet(char *arg, int socketFd)
 	if(file == NULL)
 	{
 		perror("Fehler beim Öffnen der Datei"); 
-		return; 
 	}
-	fseek(file, 0, SEEK_END); 
-	long fileSize = ftell(file); 
-	fseek(file, 0, SEEK_SET); 
+
+	int fseekRetVal; 
+	if((fseekRetVal =  fseek(file, 0, SEEK_END)) != 0)
+	{perror
+		perro("Error in fseek"); 
+	} 
+	long fileSize = ftell(file);  
+	if((fseekRetVal =  fseek(file, 0, SEEK_SET)) != 0)
+	{
+		perro("Error in fseek"); 
+	} 
 
 	char* fileData = (char*)malloc(fileSize); 
 	if(fileData == NULL)
 	{
 		perror("Fehler bei der Speicherzuweisung"); 
-		fclose(file); 
-		return; 
+		if(fclose(file) != 0)
+		{
+			perro("Error in flclose"); 
+		}
 	}
 
 	size_t bytesRead = fread(fileData, sizeof(char), fileSize, file); 
 	if(bytesRead != fileSize)
 	{
 		perror("Fehler beim Lesen der Datei"); 
-		fclose(file); 
+		if(fclose(file) != 0)
+		{
+			perro("Error in flclose"); 
+		} 
 		free(fileData); 
-		return; 
 	}
-
-	fclose(file); 
-
+	if(fclose(file) != 0)
+	{
+		perro("Error in flclose"); 
+	} 
 	// Aktuelle Uhrzeit ermitteln
     time_t currentTime;
-    time(&currentTime);
-    struct tm* timeInfo = localtime(&currentTime);
+    if((currentTime = time(&currentTime)) == currentTime - 1)
+	{
+		perror("Error in time"); 
+	}
+    
+	struct tm* timeInfo = localtime(&currentTime);
     char formattedTime[64];
-    strftime(formattedTime, sizeof(formattedTime), "%d-%m-%Y %H:%M:%S", timeInfo);
+    int retVal; 
+	retVal =  strftime(formattedTime, sizeof(formattedTime), "%d-%m-%Y %H:%M:%S", timeInfo);
+	if(retVal == 0)
+	{
+		printf("strftime in line: %d returned 0\n", __LINE__); 
+	}
 
 	//Response-Nachricht erstellen 
 	char *response = (char*)malloc(fileSize + 256); 
 	if(response == NULL)
 	{
 		perror("Fehler bei der Speicherzuweisung"); 
-		free(fileData);  
-		return; 
+		free(fileData);   
 	}
-	sprintf(response, "Datei: %s\nDateigröße: %ld\nLetzte Änderung: %s\n\n%s", filename, fileSize, formattedTime, fileData); 
+	int retVal = sprintf(response, "Datei: %s\nDateigröße: %ld\nLetzte Änderung: %s\n\n%s", filename, fileSize, formattedTime, fileData); 
 
 	if (send(socketFd, response, strlen(response), 0) == -1)
     {
         perror("Fehler beim Senden der Daten");
         free(fileData);
         free(response);
-        return NULL;
     }
 	free(fileData); 
 	free(response); 
@@ -275,8 +341,7 @@ void handlePut(char *arg, int socketFd, int dataLength)
 	FILE *file = fopen(filename, "w"); 
 	if(file == NULL)
 	{
-		perror("Fehler beim Öffnen der Datei"); 
-		return; 
+		perror("Fehler beim Öffnen der Datei");  
 	}
 
 	//Dateiinhalt parsen
@@ -288,7 +353,6 @@ void handlePut(char *arg, int socketFd, int dataLength)
     {
         perror("Fehler beim Schreiben der Daten in die Datei");
         fclose(file);
-        return;
     }
 	fclose(file); 
 	printf("Datei lokal auf den Server gespeichert.\n"); 
