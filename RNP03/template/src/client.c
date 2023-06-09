@@ -9,15 +9,24 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define MAX_HOSTNAME_SIZE 200
+#define MAX_HOSTNAME_SIZE 50
 #define MSG_BUFFER_SIZE 256
+#define INPUT_SIZE 200
+#define COMMAND_SIZE 7
+#define FILENAME_SIZE 193
+
+#define ERROR_GET 1
+#define ERROR_PUT 2
+#define ERROR_FILES 3
+#define ERROR_LIST 4
+#define ERROR_QUIT 5
 
 void *get_in_addr(struct sockaddr *sa);
-void sendGetRequest(int socketFd, char* filename);
-void sendPutRequest(int socketFd, char* filename);
-void sendFilesRequest(int socketFd);
-void sendListRequest(int socketFd);
-void sendQuitRequest(int socketFd);
+int sendGetRequest(int socketFd, char* filename);
+int sendPutRequest(int socketFd, char* filename);
+int sendFilesRequest(int socketFd);
+int sendListRequest(int socketFd);
+int sendQuitRequest(int socketFd);
 
 
 int main(int argc, char** argv)
@@ -28,12 +37,12 @@ int main(int argc, char** argv)
   char *serverAddr = NULL;
   char hostname[MAX_HOSTNAME_SIZE]; 
   memset(hostname, 0, MAX_HOSTNAME_SIZE); 
-  struct utsname serverHostname; //alternative     
-  char msgBuffer[MSG_BUFFER_SIZE];
-  memset(msgBuffer, 0, MSG_BUFFER_SIZE);
+  char recvMsgBuffer[MSG_BUFFER_SIZE];
+  ssize_t recvRetVal = 0;
+  int errorCode;
 
-    //Über diesen Socket findet die Kommunikation mit dem Server statt
-  int sockfd; 
+  //Über diesen Socket findet die Kommunikation mit dem Server statt
+  int socketFd;
 
   /*socket Konfiguration mit addrinfo und getaddrinfo() */
 
@@ -80,19 +89,19 @@ int main(int argc, char** argv)
     */
   for(p = clientInfo; p != NULL; p = p->ai_next)
   {
-    sockfd = socket(clientInfo->ai_family, clientInfo->ai_socktype, clientInfo->ai_protocol); 
-    if(sockfd < 0)
+      socketFd = socket(clientInfo->ai_family, clientInfo->ai_socktype, clientInfo->ai_protocol);
+    if(socketFd < 0)
     {
       continue;
     }
-    if(connect(sockfd, clientInfo->ai_addr, clientInfo->ai_addrlen) == 0)
+    if(connect(socketFd, clientInfo->ai_addr, clientInfo->ai_addrlen) == 0)
     {
       //wir konnten uns erfolgreich über einen Socket mit dem Server verbinden
       break; 
     }else
     {
         //wir konnten eine Verbindung aufbauen, somit schließe den geöffnete Socket und probiere die nächste Adresse
-        close(sockfd);
+        close(socketFd);
     }
   }
 
@@ -108,15 +117,167 @@ int main(int argc, char** argv)
   //Die Liste mit Adresse wird nicht mehr benötigt
   freeaddrinfo(clientInfo);
 
+  char input[INPUT_SIZE];
+  char filename[FILENAME_SIZE];
+  char command[COMMAND_SIZE];
+  char* fgetsRetVal;
   /**
    * In dieser Schleife werden die Befehle vom Client angenommen
    */
   while(1)
   {
+      fgetsRetVal =  fgets(input, INPUT_SIZE, stdin);
+      if(fgetsRetVal == NULL)
+      {
+          fprintf(stderr, "Error: Reading Input from stdin in Line: %d\n", __LINE__);
+      }
+      //input[strcspn(input, "\n")] = '\0';
 
+      // Eingabe in Befehl und Dateinamen aufteilen
+      sscanf(input, "%s %s", command, filename);
+
+      // Befehl überprüfen und entsprechende Aktion ausführen
+      if (strcmp(command, "List") == 0)
+      {
+          errorCode =  sendListRequest(socketFd);
+      }else
+      if (strcmp(command, "Get") == 0)
+      {
+          if (strlen(filename) == 0)
+          {
+              printf("Bitte geben Sie einen Dateinamen ein!\n");
+              continue;
+          }
+          errorCode = sendGetRequest(socketFd, filename);
+      } else if (strcmp(command, "Put") == 0)
+      {
+          if (strlen(filename) == 0)
+          {
+              printf("Bitte geben Sie einen Dateinamen ein!\n");
+              continue;
+          }
+          errorCode = sendPutRequest(socketFd, filename);
+      } else if (strcmp(command, "Files") == 0)
+      {
+        errorCode = sendFilesRequest(socketFd);
+      }else
+      if (strcmp(command, "Quit") == 0)
+      {
+          if(sendQuitRequest(socketFd) == ERROR_QUIT)
+          {
+              printf("Quit-Request konnte nicht geschickt werden!\n");
+              continue;
+          }
+          break;
+      }else
+      {
+          printf("Ungültiger Befehl!\n");
+          continue;
+      }
+      if(errorCode == 0)
+      {
+          recvRetVal =  recv(socketFd,recvMsgBuffer,MSG_BUFFER_SIZE, 0);
+          if(recvRetVal < 0)
+          {
+              perror("recv Msg from Server");
+          }else{
+              //Gib die Msg aus
+              printf("%s", recvMsgBuffer);
+          }
+      }else
+      {
+          switch (errorCode)
+          {
+              case ERROR_LIST : printf("List-Request konnte nicht geschickt werden!\n");
+              break;
+              case ERROR_FILES : printf("Files-Request konnte nicht geschickt werden!\n");
+                break;
+              case ERROR_PUT : printf("Put-Request konnte nicht geschickt werden!\n");
+                break;
+              case ERROR_GET : printf("Get-Request konnte nicht geschickt werden!\n");
+                  break;
+          }
+          continue;
+      }
   }
-
   return 0;
+}
+
+int sendGetRequest(int socketFd, char* filename)
+{
+    char msgBuffer[MSG_BUFFER_SIZE];
+    memset(msgBuffer, 0, MSG_BUFFER_SIZE);
+    //1. send des Request
+    sprintf(msgBuffer, "Get %s", filename);
+    if(send(socketFd, msgBuffer, strlen(msgBuffer), 0) == -1)
+    {
+        perror("send");
+        return ERROR_GET;
+    }
+    return EXIT_SUCCESS;
+}
+
+int sendPutRequest(int socketFd, char* filename)
+{
+    char msgBuffer[MSG_BUFFER_SIZE+1];
+    memset(msgBuffer, 0, MSG_BUFFER_SIZE);
+    FILE* file =  fopen(filename, "r");
+    if(file == NULL)
+    {
+        perror("Fehler beim öffnen. Datei existiert wohlmöglich nicht");
+        return ERROR_PUT;
+    }else
+    {
+        size_t newLen = fread(msgBuffer, sizeof(char), MSG_BUFFER_SIZE, file);
+        if (ferror( file ) != 0 )
+        {
+            fputs("Error reading file", stderr);
+            return ERROR_PUT;
+        }else
+        {
+            msgBuffer[newLen++] = '\0'; /* Just to be safe. */
+        }
+        if(send(socketFd, msgBuffer, strlen(msgBuffer), 0) == -1)
+        {
+            perror("send");
+            return ERROR_PUT;
+        }
+        return EXIT_SUCCESS;
+    }
+}
+
+int sendFilesRequest(int socketFd)
+{
+    char msgBuffer[] = "Files";
+    if(send(socketFd, msgBuffer, strlen(msgBuffer), 0) == -1)
+    {
+        perror("send");
+        return ERROR_FILES;
+    }
+    return EXIT_SUCCESS;
+}
+
+int sendListRequest(int socketFd)
+{
+    char msgBuffer[] = "List";
+    if(send(socketFd, msgBuffer, strlen(msgBuffer), 0) == -1)
+    {
+        perror("send");
+        return ERROR_LIST;
+    }
+    return EXIT_SUCCESS;
+}
+
+int sendQuitRequest(int socketFd)
+{
+    char* msgBuffer = NULL;
+    if(send(socketFd,msgBuffer, 0, 0) == -1)
+    {
+        return ERROR_QUIT;
+    }else{
+        close(socketFd);
+        return EXIT_SUCCESS;
+    }
 }
 
 /**

@@ -11,18 +11,21 @@
 #include <sys/select.h>
 #include <sys/utsname.h>
 #include <netdb.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 #define DEFAULT_PORT 0
 #define BUFFER_SIZE 256
+#define HOSTNAME_SIZE 50
+
 #define EOT '\x04'
 
 /*Prototypen*/
 
-void* handleList(char *arg);
-void* handleFiles(char *arg);
+void handleList(int socketFd, int maxFd);
+void handleFiles(int socketFd);
 void handleGet(char *arg, int socketFd);
 void handlePut(char *arg, int socketFd, int dataLength);
-void* handleQuit(char *arg, int socketFd);
 void *get_in_addr(struct sockaddr *sa); 
 
 
@@ -116,7 +119,6 @@ int main(int argc, char** argv)
 		{
 			continue;
 		}
-		
 		/*Verbinde den erzeugten Socket mit einem Port*/
 
 		if(bind(sfd_listener, (struct sockaddr*)serverInfo->ai_addr, serverInfo->ai_addrlen) == 0)
@@ -207,7 +209,6 @@ int main(int argc, char** argv)
 						{
 							maxFd = sfd_communication; 
 						}
-
 						/**
 						 * printen die IP-Adresse mittels inet_ntop von dem Clienten um sicher zugehen das, das accept erfolgreich war.
 						*/
@@ -239,15 +240,11 @@ int main(int argc, char** argv)
 						}else
 						if(strncmp("Files", msgBuffer, 5) == 0)
 						{
-							handleFiles(msgBuffer); 
+							handleFiles(i);
 						}else
 						if(strncmp("List", msgBuffer, 4) == 0)
 						{
-							handleList(msgBuffer); 
-						}else
-						if(strncmp("Quit", msgBuffer, 5) == 0)
-						{
-							handleQuit(msgBuffer, i); 
+							handleList(i, maxFd);
 						}
 					}else 
 					if(recvRetVal == 0)
@@ -280,6 +277,7 @@ int main(int argc, char** argv)
 */
 void handleGet(char *arg, int socketFd)
 {
+    //Parse den Filename
 	char* filename = strtok(arg + 4, " ");
 	FILE *file = fopen(filename, "r");
 	if(file == NULL)
@@ -293,8 +291,14 @@ void handleGet(char *arg, int socketFd)
         perror("Error in fseek");
         exit(1);
     }
-	long fileSize = ftell(file);  
-	if((fseekRetVal =  fseek(file, 0, SEEK_SET)) != 0)
+
+	long fileSize = ftell(file);
+    if(fileSize == -1){
+        perror("Error in ftell");
+    }
+
+    fseekRetVal = fseek(file, 0, SEEK_SET);
+    if(fseekRetVal != 0)
 	{
 		perror("Error in fseek"); 
 	} 
@@ -321,16 +325,12 @@ void handleGet(char *arg, int socketFd)
 	}
 	if(fclose(file) != 0)
 	{
-		perror("Error in flclose"); 
+		perror("Error in fclose");
 	} 
 	// Aktuelle Uhrzeit ermitteln
     time_t currentTime;
     currentTime = time(&currentTime);
-    if(currentTime == currentTime - 1)
-	{
-		perror("Error in time"); 
-	}
-    
+
 	struct tm* timeInfo = localtime(&currentTime);
     char formattedTime[64];
     size_t strftimeretVal;
@@ -378,8 +378,11 @@ void handlePut(char *arg, int socketFd, int dataLength)
 	}
 
 	//Dateiinhalt parsen
-	char dateiInhalt[253]; //Größe ist 253 da 256 Byte - 4 Byte = 252 Byte und +1 Byte wegen \0. 
-	strncpy(dateiInhalt, arg + 4, 253); //arg + 4, damit der Pointer 4 Byte nach rechts geht da die ersten 3 Byte der Befehl Put sind und dann Leerzeichen. 
+	char dateiInhalt[BUFFER_SIZE-4]; //252
+
+
+    strncpy(dateiInhalt, arg + 4, sizeof(dateiInhalt+1)); //arg + 4, damit der Pointer 4 Byte nach rechts geht da die ersten 3 Byte der Befehl Put sind und dann Leerzeichen.
+
 
 	size_t bytesWritten = fwrite(dateiInhalt, sizeof(char), dataLength-3, file); 
 	if (bytesWritten != (size_t)dataLength)
@@ -390,6 +393,7 @@ void handlePut(char *arg, int socketFd, int dataLength)
 	fclose(file); 
 	printf("Datei lokal auf den Server gespeichert.\n"); 
 
+    //Response generieren
 	char response[256]; 
 	struct sockaddr_in server_addr; 
 	socklen_t len = sizeof(server_addr); 
@@ -413,13 +417,44 @@ void handlePut(char *arg, int socketFd, int dataLength)
  * <Clienthostname>:<Clientport>
  * <N> Clients verbunden
  * ausgegeben. 
- * 
- * @return  
+ *
 */
-void* handleList(char *arg)
+void handleList(int socketFd, int maxFd)
 {
+    char msgBuffer[BUFFER_SIZE];
+    int port;
+    char clientHostName[HOSTNAME_SIZE];
 
-	return NULL;
+    struct sockaddr_storage sa_client;
+    socklen_t sa_len = sizeof(struct sockaddr_storage);
+    for(int i = 0; i <= maxFd; i++)
+    {
+        int retVal = getpeername(i, (struct sockaddr*)&sa_client, &sa_len);
+        if(retVal == -1){
+            perror("Error in getpeername");
+            continue;
+        }else
+        {
+            getnameinfo((struct sockaddr*)&sa_client,sa_len,clientHostName, sizeof(clientHostName), NULL, 0, 0);
+            if(sa_client.ss_family == AF_INET)
+            {
+                struct sockaddr_in* sa_IPv4_client = (struct sockaddr_in*)&sa_client;
+                port = sa_IPv4_client->sin_port;
+            }else
+            {
+                struct sockaddr_in6* sa_IPv6_client = (struct sockaddr_in6*)&sa_client;
+                port = sa_IPv6_client->sin6_port;
+            }
+            sprintf(msgBuffer, "%s : %d\n",clientHostName, port);
+        }
+    }
+    sprintf(msgBuffer, "%d Clients verbunden\n", maxFd);
+
+    if(send(socketFd, msgBuffer, sizeof(msgBuffer), 0) == -1)
+    {
+        perror("Error in send");
+        exit(EXIT_FAILURE);
+    }
 }
 
 /**
@@ -431,21 +466,57 @@ void* handleList(char *arg)
  * 
  * @return
 */
-void* handleFiles(char *arg)
+void handleFiles(int socketFd)
 {
+    char directory[] = ".";
+    char msgBuffer[BUFFER_SIZE];
+    DIR *dir;
+    struct dirent *entry;
+    struct stat file_stat;
+    struct tm *modified_time;
+    char modified_time_str[20];
+    int numFiles = 0;
+    // Verzeichnis öffnen
+    dir = opendir(directory);
+    if (dir == NULL) {
+        perror("Fehler beim Öffnen des Verzeichnisses");
+        exit(EXIT_FAILURE);
+    }
 
-	return NULL;
-}
+    // Alle Einträge im Verzeichnis durchlaufen
+    while ((entry = readdir(dir)) != NULL)
+    {
+        // Kompletten Dateipfad erstellen
+        char file_path[256];
+        sprintf(file_path, "%s/%s", directory, entry->d_name);
+        //snprintf(file_path, sizeof(file_path), "%s/%s", directory, entry->d_name);
 
-/**
- * @brief Diese Funktion handled die Quit Anfragen der Clienten.
- * Bei einem Quit wird die Verbindung zwischen Server und Client aus der Clientseite beendet
- * 
- * @return  
-*/
-void* handleQuit(char *arg, int socketFd)
-{
-	return NULL; 
+        // Dateiattribute abrufen
+        if (stat(file_path, &file_stat) == -1)
+        {
+            perror("Fehler beim Abrufen von Dateiattributen");
+            exit(EXIT_FAILURE);
+        }
+
+        // Nur reguläre Dateien berücksichtigen
+        if (S_ISREG(file_stat.st_mode) && strstr(entry->d_name, ".txt") != NULL)
+        {
+            // Letzte Änderungszeit
+            modified_time = localtime(&file_stat.st_mtime);
+            strftime(modified_time_str, sizeof(modified_time_str), "%Y-%m-%d %H:%M:%S", modified_time);
+            sprintf(msgBuffer, "%s : %s %lld",entry->d_name,  modified_time_str, (long long)file_stat.st_size);
+            numFiles++;
+        }
+    }
+    sprintf(msgBuffer, "%d Dateien", numFiles);
+    // Verzeichnis schließen
+    closedir(dir);
+
+    if(send(socketFd, msgBuffer, sizeof(msgBuffer), 0) == -1)
+    {
+        perror("Error in send");
+        exit(EXIT_FAILURE);
+    }
 }
 
 /**
