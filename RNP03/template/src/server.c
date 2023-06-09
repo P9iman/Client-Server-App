@@ -12,21 +12,62 @@
 #include <sys/utsname.h>
 
 #define DEFAULT_PORT 0
+#define BUFFER_SIZE 256
+#define EOT '\x04'
+
+/*Prototypen*/
 
 void* handleList(char *arg);
 void* handleFiles(char *arg);
 void handleGet(char *arg, int socketFd);
 void handlePut(char *arg, int socketFd, int dataLength);
-void* handleQuit(char *arg);
+void* handleQuit(char *arg, int socketFd);
+void *get_in_addr(struct sockaddr *sa); 
 
 
-char clientAddress[INET_ADDRSTRLEN]; 
 struct utsname serverHostname;
 
 int main(int argc, char** argv)
 {
-	//TODO: Lieber getnameinfo benutzten 
+	//Die IPv4 oder IPv6 Adresse vom client 
+	char clientIPAddress[INET6_ADDRSTRLEN]; 
+	//Der Port von dem Server über dem Nachrichten ausgetauscht werden 
+	char* serverPort;
+	//Buffer für die Nachricht des Clienten
+	char msgBuffer[BUFFER_SIZE];
+	memset(msgBuffer, 0, BUFFER_SIZE); 
+	//Return Value vom recv 
+	int recvRetVal; 
 
+	// ALTE METHODE: Hier drinn stehen Informationen über den Client nach dem accept() (Port, IP-Adresse, ... ) 
+	// struct sockaddr_in sa_client; 
+	// unsigned int sa_len = sizeof(struct sockaddr_in);
+
+	//NEUE METHODE: besser als struct sockaddr_in ist sockaddr_storage. Kann sowohl IPv4 als auch IPv6 structure halten
+	struct sockaddr_storage sa_client; 
+	socklen_t sa_len = sizeof(struct sockaddr_storage); 
+
+	/*Erzeuge FD Set um mit select auf Sockets zu reagieren die bereit für I/O sind*/
+	
+	int selectRetVal; 
+	//die größte FD Nummer
+	int maxFd; 
+	//in diesem Set mit File-Discreptoren sind die fds für die Sockets aus denen gelesen werden soll 
+	fd_set read_fdset; 
+	fd_set read_fdset_copy; 
+	//Initialisiere die beiden fd_set
+	FD_ZERO(&read_fdset); 
+	FD_ZERO(&read_fdset_copy); 
+
+	/**
+	 * sfd_listener = Socket-File-Diskreptor für listening
+	 * sfd_communication = Socket-File-Diskreptor für Kommunikation mit clients 
+	 * sfd_ready = Socket-File-Diskreptor der ready ist für Nachrichtenaustausch
+	*/
+	int sfd_listener, sfd_communication, sfd_ready; 
+
+
+	//TODO: Lieber getnameinfo benutzten 
 	//Speicher den Serverhostname in serverHostname ab. 
 	if(uname(&serverHostname) == -1) 
 	{
@@ -34,15 +75,12 @@ int main(int argc, char** argv)
         return 1;    
     } 
 
-	//Der Port von dem Server über dem Nachrichten ausgetauscht werden 
-	char* serverPort;
-
 	if(argc > 2)
 	{
 		printf("Starting server failed!\nUsage: ./server [Port]\n"); 
       	return 1; 
 	}else 
-	if(args == 2)
+	if(argc == 2)
 	{
 		serverPort = argv[1]; 
 	}else
@@ -52,16 +90,24 @@ int main(int argc, char** argv)
 	
 	/*Konfiguriere Socket*/
 
-	/* 
-		int getaddrinfo(const char *node,	  // e.g. "www.example.com" or IP
-						const char *service, // e.g. "http" or port number
-						const struct addrinfo *hints,
-						struct addrinfo **res);				
-  	*/
+	//VORHER:
+	////sa = die Socketadresse vom Server 
+	// struct sockaddr_in sa;  
+	//// Host-to-Networkbyteorder und setze die Portnummer in das struct für den Server
+	// sa.sin_port = htons(serverPort);
+	// sa.sin_addr.s_addr = INADDR_ANY;
+	// if ((sfd_listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) 
+	// {
+	// 	perror("TCP Socket");
+	// 	return 1;
+	// }
+	//hier Internetadressfamilie = IPv4 
+	// sa.sin_family = AF_INET;
 
 	int getddrinfoRetVal; 
-	struct addrinfo hints; 
-  	struct addrinfo *serverInfo;  
+	struct addrinfo p;			  //Index vom aktuelle Node der verketten Liste 
+	struct addrinfo hints; 		  //in diesem Struct steht wie der Socket konfiguriert werden soll
+  	struct addrinfo *serverInfo;  //Pointer auf eine Verkettet Liste nach dem getaddrinfo() Aufruf
   	memset(&hints, 0, sizeof hints); 
   	hints.ai_family = AF_UNSPEC; //Adress-Family ist unspezifiziert somit IPv4 und IPv6 möglich
 	hints.ai_socktype = SOCK_STREAM; 
@@ -79,158 +125,197 @@ int main(int argc, char** argv)
 	
 	//TODO: Iteriere über die LinkedList serverInfo um zu prüfen das getaddrinfo 
 	//		die Struct und andere Elemente korrekt gefüllt hat. 
-
-
-	/*Erzeuge Socket mit socket()*/
-
-	/**
-	 * sfd_listener = Socket-Diskreptor für listening
-	 * sfd_communication = Socket-Diskreptor für Kommunikation mit clients 
-	*/
-	int sfd_listener, sfd_communication;
-
-	sfd_listener = socket(serverInfo->ai_family, serverInfo->ai_socktype, serverInfo->ai_protocol); 
-	if(sfd_listener < 0)
+	for(p = serverInfo; p != NULL; p = p->ai_next)
 	{
-		perror("TCP Socket");
-		return 1;
+		/*Erzeuge Socket mit socket()*/
+
+		sfd_listener = socket(serverInfo->ai_family, serverInfo->ai_socktype, serverInfo->ai_protocol);
+		if(sfd_listener < 0)
+		{
+			continue;
+			// perror("TCP Socket");
+			// return 1;
+		}
+		
+		/*Verbinde den erzeugten Socket mit einem Port*/
+
+		if(bind(sfd_listener, (struct sockaddr*)serverInfo->ai_addr, serverInfo->ai_addrlen) != 0)
+		{
+			continue;
+			// perror("bind");
+			// return 1;
+		}
+		break; 
 	}
 
-	////sa = die Socketadresse vom Server 
-	// struct sockaddr_in sa;  
-	//// Host-to-Networkbyteorder und setze die Portnummer in das struct für den Server
-	// sa.sin_port = htons(serverPort);
-	// sa.sin_addr.s_addr = INADDR_ANY;
-	// if ((sfd_listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) 
+	if(p == NULL)
+	{
+		fprintf(stderr, "selectserver: failed to bind\n");
+		return 1; 
+	}
+
+	freeaddrinfo(serverInfo); 
+
+	// sfd_listener = socket(serverInfo->ai_family, serverInfo->ai_socktype, serverInfo->ai_protocol); 
+	// if(sfd_listener < 0)
 	// {
 	// 	perror("TCP Socket");
 	// 	return 1;
 	// }
-	//hier Internetadressfamilie = IPv4 
-	// sa.sin_family = AF_INET;
 
-	/*Bind den erzeugten Socket mit einem Port*/
+	// if(bind(sfd_listener, (struct sockaddr*)serverInfo->ai_addr, serverInfo->ai_addrlen) != 0)
+	// {
+	// 	perror("bind");
+	// 	return 1;
+	// }
 
-	if(bind(sfd_listener, (struct sockaddr*)serverInfo->ai_addr, serverInfo->ai_addrlen) != 0)
-	{
-		perror("bind");
-		return 1;
-	}
 
-	/* Warte mit listen() auf eingehende Verbindungen */
+	/* Warte mit listen() auf eingehende Verbindungen am erzeugten Socket */
 
-	//Nun hört der Server an seinem Socket auf Verbindungsanfrangen
-	if (listen(sfd_listener, 5) < 0) 
+	/**
+	 * Eingehende Verbindungen werden in einer Queue eingefügt bis diese mit accept() akzeptiert werden. 
+	 * Mit dem Argument 5, wird die Queuegröße für die eingehenden Verbindungen festgelegt 
+	*/ 
+	if(listen(sfd_listener, 5) < 0) 
 	{
 		perror("listen");
-		close(sfd_listener);
+		if(close(sfd_listener) < 0)
+		{
+			perror("close"); 
+		}
 		return 1;
 	}
+
 	// TODO: Check port in use and print it.
 	printf("Waiting for TCP connections ... \n");
 
-	
+	//fuege den Socket fd in das read_fdset
+	FD_SET(sfd_listener, &read_fdset); 
+	//der letzte fd ist der größte somit sfd_listener
+	maxFd = sfd_listener; 
 
-	/*Ab hier ist der Server im listening Zustand*/
-
-/* 	int retVal = 0; 
-	int max_fd = 0;
-	//In diesem FD Set werden alle File-Descriptoren gespeichert um auf Veränderungen dieser fd zu reagieren 
-	fd_set fd_Set;
-	//Initialisieren das fd Set 
-	FD_ZERO(&fd_Set);
-
-	//Beispiel für die Anwendung von fd_set 
-	int fd1 = 3;
-	int fd2 = 5; 
-	//Füge fd der Menge an FDs hinzu
-	FD_SET(fd1, &fd_Set); 
-	FD_SET(fd2, &fd_Set); 
-
-	if (fd1 > max_fd)
-        max_fd = fd1;
-    if (fd2 > max_fd)
-        max_fd = fd2;
- */
-
-
-	//sa_client = die Socketadresse vom Client
-	struct sockaddr_in sa_client;
-	char info[256];
-	unsigned int sa_len = sizeof(struct sockaddr_in);
 	while (1) 
 	{
-		//TODO Hier select auf das fd_set aufrufen um einen fd auszuwählen der ready ist. 
-		/*nfds = der fd der, der größte aus allen fd_sets ist + 1*/
-/* 		if((retVal =  select(0, NULL, NULL, NULL, NULL)) == -1)
+		//jedes Mal wenn Select aufgerufen wird das set aktualsiert, damit die Verbindungen nicht überschrieben werden muss das set zwischengespeichert werden  
+		read_fdset_copy = read_fdset; 
+ 		/**
+		 * 1. Arg = nfds, der größte fd+1 
+		 * 2. Arg = fd set mit Sockets aus den gelesen werden soll
+		*/
+		if((selectRetVal =  select(maxFd + 1, &read_fdset_copy, NULL, NULL, NULL)) == -1)
 		{
-			perror("Fehler bei select() " __FILE__); 
+			perror("Fehler bei select()"); 
 			return 1; 
 		}
 
-		//Überprüfe, welche Dateidiskreptoren bereit sind 
-		if(FD_ISSET(fd1, &fd_Set))
-		{
-			
-		}
- */
-
-		//für jede akzeptierte Verbindung wird ein neuer Socket erstellt. In news ist der FD auf diesen neuen Socket
-		if ((sfd_communication = accept(sfd_listener, (struct sockaddr*)&sa_client, &sa_len)) < 0) 
-		{
-			perror("accept");
-			close(sfd_listener);
-			return 1;
-		}
-
-		/*
-			printen die IP-Adresse von dem Clienten um sicher zugehen das, das accept erfolgreich war.
-			inet_ntop konvertiert die binäre Repräsentation der Adresse in lesbare Repräsentation
+		/**
+		 * Iteriere über die Menge der FD um entweder auf neue Verbindungen zu reagieren (also wenn sich der fd Zustand von sfd_listener verändert hat)
+		 * oder wenn einer der Socket FD für communication ready ist, darauf zu reagieren um Nachrichten (mit recv) zu erhalten.  
 		*/
-		char *inet_ntop_retVal = inet_ntop(AF_INET, &sa_client, clientAddress, INET_ADDRSTRLEN); 
-		inet_ntop_retVal == NULL ? perror("Fehler beim Konvertieren der Adresse") : printf("Client verbunden mit dieser Adresse: %s\n", clientAddress); 
-		
-
-		if (recv(sfd_communication, info, sizeof(info), 0))
+		for(int i = 0; i < maxFd; i++)
 		{
-			printf("Message received: %s \n", info);
-			if(info == NULL)
+			if(FD_ISSET(i, &read_fdset_copy))
 			{
-				printf("Error: Message ist null!\n");
-				return 1; 
-			}
+				// Es gibt eine neue Verbindungsanfrage
+				if(i == sfd_listener)
+				{
+					/*Akzeptiere Verbindungsanfrage der Clients*/
+					/**
+				 	* 1. Argument: wir akzeptieren Verbindungen an dem listener Socket-FD
+					* 2. Argument: In diesem struct steht die Informationen über die eingehnde Verbindung (Client-Infos)
+		 			* 3. Argument: accept() soll maximal sa_len Bytes in sa_client einfügen
+					*/
 
-			//Hier werden auf die eingehenden Nachrichten reagiert --> Handle-Methoden
-			if(strncmp("Get", info, 4) == 0)
-			{
-				handleGet(info, sfd_communication); 
-			}else
-			if(strncmp("Put", info, 4) == 0)
-			{
-				handlePut(info, sfd_communication, sizeof(info)); 
-			}else
-			if(strncmp("Files", info, 5) == 0)
-			{
-				handleFiles(info); 
-			}else
-			if(strncmp("List", info, 4) == 0)
-			{
-				handleList(info); 
-			}else
-			if(strncmp("Quit", info, 5) == 0)
-			{
-				handleQuit(info); 
-			}else
-			{
-				//ungültiges Kommando vom Client
-				//TODO darauf entsprechend reagieren 
-				printf("Ungütliges Kommando vom Client\n"); 
+					//neue Verbindung damit auch neuer Socket-FD
+					sfd_communication = accept(sfd_listener, (struct sockaddr *)&sa_client, &sa_len); 
+					if(sfd_communication < 0)
+					{
+						perror("accept");
+					}else
+					{
+						//Füge den Socket-FD in die Menge um auf eingehnde Nachrichten zu reagieren
+						FD_SET(sfd_communication, &read_fdset); 
+						//Aktualisiere den maxFD damit bei der nächsten Iteration wieder alle FDs geprüft werden 
+						if(sfd_communication > maxFd)
+						{
+							maxFd = sfd_communication; 
+						}
+
+						/**
+						 * printen die IP-Adresse mittels inet_ntop von dem Clienten um sicher zugehen das, das accept erfolgreich war.
+						*/
+						char *inet_ntop_retVal = inet_ntop(sa_client.ss_family, get_in_addr((struct sockaddr *)&sa_client), clientIPAddress, INET6_ADDRSTRLEN); 
+						inet_ntop_retVal == NULL ? perror("inet_ntop Fehler beim Konvertieren der Adresse") : 
+						printf("Client hat sich verbunden mit dieser Adresse: %s am Socket: %d\n", clientIPAddress, sfd_communication); 
+					}
+				}else //ein Client will Daten schicken  
+				{
+					/*Erhalte Nachrichten über den communication Socket*/
+
+					/**
+					 * 1.Arg Lese aus dem Socket sfd_communication Nachrichten
+					 * 2.Arg Speichere die Nachrichten in den Buffer msgBuffer
+					 * 3.Arg die max. Länge vom Buffer
+					 * 4.Arg für Flags
+					*/
+					if ((recvRetVal = recv(i, msgBuffer, sizeof(msgBuffer), 0)) > 0)
+					{		
+						//Finde heraus welcher communication Socket ready ist für den Nachrichtenaustausch
+						// for(int j = 0; j <= maxFd; j++)
+						// {
+						// 	if(FD_ISSET(j, &read_fdset) && j != NULL)
+						// 	{
+						// 		sfd_ready = j; 
+						// 	}
+						// } 
+						
+						// for(int k = 0; k < recvRetVal; k++)
+						// {
+						// 	if(msgBuffer[i] == EOT)
+						// 	{
+
+						// 	}
+						// }
+
+						if(strncmp("Get", msgBuffer, 4) == 0)
+						{
+							handleGet(msgBuffer, i); 
+						}else
+						if(strncmp("Put", msgBuffer, 4) == 0)
+						{
+							handlePut(msgBuffer, i, sizeof(msgBuffer)); 
+						}else
+						if(strncmp("Files", msgBuffer, 5) == 0)
+						{
+							handleFiles(msgBuffer); 
+						}else
+						if(strncmp("List", msgBuffer, 4) == 0)
+						{
+							handleList(msgBuffer); 
+						}else
+						if(strncmp("Quit", msgBuffer, 5) == 0)
+						{
+							handleQuit(msgBuffer, i); 
+						}
+					}else 
+					if(recvRetVal == 0)
+					{
+						/*Wir haben als Return Value von recv() 0 erhalten, das bedeutet ein Client hat die Verbindung zum Server geschlossen*/
+						printf("Client am Socket %d hat Verbindung abgebrochen\n", i); 
+						printf("Schließe Socket %d\n", i); 
+						close(i); 
+						FD_CLR(i, &read_fdset); //Lösche den fd aus dem Set
+					}else
+					{
+						//Fehler beim Empfangen der Nachricht
+						perror("recv"); 
+						close(i);
+						return 1; 
+					}
+				}
 			}
-		}
+		} 
 	}
-	close(sfd_listener);
-	//TODO: Muss freeaddrinfo() vor oder nach close aufgerufen werden 
-	freeaddrinfo(serverInfo);
 	return 0; 
 }
 
@@ -256,13 +341,13 @@ void handleGet(char *arg, int socketFd)
 
 	int fseekRetVal; 
 	if((fseekRetVal =  fseek(file, 0, SEEK_END)) != 0)
-	{perror
-		perro("Error in fseek"); 
+	{
+		perror("Error in fseek"); 
 	} 
 	long fileSize = ftell(file);  
 	if((fseekRetVal =  fseek(file, 0, SEEK_SET)) != 0)
 	{
-		perro("Error in fseek"); 
+		perror("Error in fseek"); 
 	} 
 
 	char* fileData = (char*)malloc(fileSize); 
@@ -271,7 +356,7 @@ void handleGet(char *arg, int socketFd)
 		perror("Fehler bei der Speicherzuweisung"); 
 		if(fclose(file) != 0)
 		{
-			perro("Error in flclose"); 
+			perror("Error in flclose"); 
 		}
 	}
 
@@ -281,13 +366,13 @@ void handleGet(char *arg, int socketFd)
 		perror("Fehler beim Lesen der Datei"); 
 		if(fclose(file) != 0)
 		{
-			perro("Error in flclose"); 
+			perror("Error in flclose"); 
 		} 
 		free(fileData); 
 	}
 	if(fclose(file) != 0)
 	{
-		perro("Error in flclose"); 
+		perror("Error in flclose"); 
 	} 
 	// Aktuelle Uhrzeit ermitteln
     time_t currentTime;
@@ -298,9 +383,9 @@ void handleGet(char *arg, int socketFd)
     
 	struct tm* timeInfo = localtime(&currentTime);
     char formattedTime[64];
-    int retVal; 
-	retVal =  strftime(formattedTime, sizeof(formattedTime), "%d-%m-%Y %H:%M:%S", timeInfo);
-	if(retVal == 0)
+    int strftimeretVal; 
+	strftimeretVal =  strftime(formattedTime, sizeof(formattedTime), "%d-%m-%Y %H:%M:%S", timeInfo);
+	if(strftimeretVal == 0)
 	{
 		printf("strftime in line: %d returned 0\n", __LINE__); 
 	}
@@ -312,8 +397,7 @@ void handleGet(char *arg, int socketFd)
 		perror("Fehler bei der Speicherzuweisung"); 
 		free(fileData);   
 	}
-	int retVal = sprintf(response, "Datei: %s\nDateigröße: %ld\nLetzte Änderung: %s\n\n%s", filename, fileSize, formattedTime, fileData); 
-
+	sprintf(response, "Datei: %s\nDateigröße: %ld\nLetzte Änderung: %s\n\n%s", filename, fileSize, formattedTime, fileData); 
 	if (send(socketFd, response, strlen(response), 0) == -1)
     {
         perror("Fehler beim Senden der Daten");
@@ -410,7 +494,21 @@ void* handleFiles(char *arg)
  * 
  * @return  
 */
-void* handleQuit(char *arg)
+void* handleQuit(char *arg, int socketFd)
 {
 	return NULL; 
+}
+
+/**
+ * @brief Diese Hilfsfunktion liefert die Socketadresse sowohl für IPv4 als auch für IPv6
+*/
+void *get_in_addr(struct sockaddr *sa)
+{
+	if(sa->sa_family == AF_INET)
+	{
+		return &(((struct sockaddr_in*)sa)->sin_addr);
+	}else
+	{
+		return &(((struct sockaddr_in6*)sa)->sin6_addr); 
+	}
 }

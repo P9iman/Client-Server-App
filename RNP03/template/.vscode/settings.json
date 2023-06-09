@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "utsname.h": "c",
+        "select.h": "c"
+    }
+}

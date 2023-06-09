@@ -35,14 +35,6 @@ int main(int argc, char** argv)
       printf("Connecting to %s on Port %d ...\n", serverAddr, port);  
   }
 
-  /*
-    int getaddrinfo(const char *node,
-                    // e.g. "www.example.com" or IP
-                    const char *service, // e.g. "http" or port number
-                    const struct addrinfo *hints,
-                    struct addrinfo **res);
-  
-  */
   int retVal; 
   struct addrinfo hints; 
   struct addrinfo *serverInfo;  
