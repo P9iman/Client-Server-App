@@ -8,7 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/src/client.c" "src/CMakeFiles/client.dir/client.c.o" "gcc" "src/CMakeFiles/client.dir/client.c.o.d"
+  "/mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/src/client.c" "src/CMakeFiles/client.dir/client.c.o" "gcc" "src/CMakeFiles/client.dir/client.c.o.d"
   )
 
 # Targets to which this target links.

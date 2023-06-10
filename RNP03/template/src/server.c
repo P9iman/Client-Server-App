@@ -3,7 +3,7 @@
 #include <string.h>
 #include <time.h>
 #include <stdlib.h>
-#include <bool.h>
+#include <stdbool.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -19,7 +19,7 @@
 #define DEFAULT_PORT 0
 #define BUFFER_SIZE 256
 #define HOSTNAME_SIZE 50
-#define MAX_CLIENTS 5
+#define MAX_CLIENTS 10
 
 #define EOT '\x04'
 
@@ -36,9 +36,9 @@ void convertAddressToString(const struct sockaddr_storage *addr, char *ip, size_
 struct utsname serverHostname;
 int sfd_listener; /*sfd_listener = Socket-File-Diskreptor für listening*/
 int readSockets = 0; /*Hier drinn steht der RetVal von select, also die Anzahl an readable Sockets*/
-int connectlist[MAX_CLIENTS];  /* Array of connected sockets so we know who we are talking to */
 
-fd_set read_fdset; /*in diesem Set mit File-Discreptoren sind die fds für die Sockets aus denen gelesen werden soll*/
+fd_set read_fdset; /*in diesem Set mit File-Discreptoren sind die fds für die Sockets aus denen gelesen werden soll*/ 
+fd_set copy_read_fdset; 
 
 int maxFd; /*der größte FD, wird für select benötigt*/
 //sockaddr_storage besser als sockaddr_in, da es Platz für IPv4 als auch IPv6 struct hat
@@ -59,7 +59,7 @@ ssize_t recvRetVal;
 typedef struct{
     char hostname[INET6_ADDRSTRLEN];
     int port;
-    bool connected, 
+    int socketFd; //wenn kein client in dem arrayslot verbunden ist, ist socketFd = -1 
 }ClientInfo;
 ClientInfo connectedClients[MAX_CLIENTS]; 
 int numConnectedClients = 0;  
@@ -70,132 +70,131 @@ void setnonblocking(int socket)
     int opts;
     opts = fcntl(socket,F_GETFL);
     if (opts < 0) {
-        perror("fcntl(F_GETFL)");
+        perror("fcntl(F_GETFL) in setnonblocking()");
         exit(EXIT_FAILURE);
     }
     opts = (opts | O_NONBLOCK);
     if (fcntl(socket,F_SETFL,opts) < 0){
-        perror("fcntl(F_SETFL)");
+        perror("fcntl(F_SETFL) in setnonblocking()");
         exit(EXIT_FAILURE);
     }
 }
 
 void build_select_list()
 {
-    int listnum;
-    FD_ZERO(&read_fdset);
-    //fuege den Socket fd in das read_fdset
+    //jedes mal nach select muss das fdset neu initialisiert werden
+    FD_ZERO(&read_fdset); 
+    //auch der listener Fd-Socket muss immer wieder eingefügt werden da er nach select nicht gesetzt ist
     FD_SET(sfd_listener, &read_fdset);
-    for (listnum = 0; listnum < MAX_CLIENTS; listnum++)
+
+    for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if (connectlist[listnum] != 0)
-        {
-            FD_SET(connectlist[listnum],&read_fdset);
-            if (connectlist[listnum] > maxFd)
-                maxFd = connectlist[listnum];
+        if(connectedClients[i].socketFd > 0){
+            FD_SET(connectedClients[i].socketFd, &read_fdset); 
+        }
+        if(connectedClients[i].socketFd > maxFd){
+            maxFd = connectedClients[i].socketFd; 
         }
     }
 }
 
-void build_select_list_New()
-{
-    
-}
-
-
 void handle_new_connection()
 {
     /*Handle hier die neue connection*/
-
-    int listnum;
     int newConnection;
     int clientPort;
+    int sendRetVal = 0; 
     newConnection = accept(sfd_listener, (struct sockaddr *)&sa_client, &sa_len);
     if(newConnection < 0)
     {
-        perror("Error in accept");
+        perror("accept in handle_new_connection()");
         exit(EXIT_FAILURE);
+    }
+    if(numConnectedClients == MAX_CLIENTS)
+    {
+        /* Kein Platz mehr im Server benachrichtige den client mit einer Nachricht der Größe 0*/
+        sendRetVal = send(newConnection, "", 0, 0);  
+    }else{
+        sendRetVal = send(newConnection, "Connected", sizeof("Connected"), 0); 
+    }
+    if(sendRetVal == -1){
+        close(newConnection); 
+        perror("send in handle_new_connection()"); 
+        exit(EXIT_FAILURE);  
     }
     setnonblocking(newConnection);
     convertAddressToString(&sa_client,clientIPAddress, sizeof(clientIPAddress),&clientPort); 
     printf("Client with address %s has connected on port %d\n", clientIPAddress, clientPort);
-    connectlist[listnum] = newConnection;
-
-    // for(listnum = 0; (listnum < 5) && (newConnection != -1); listnum++)
-    // {
-    //     if(connectlist[listnum] == 0)
-    //     {
-    //         convertAddressToString(&sa_client,clientIPAddress, sizeof(clientIPAddress),&clientPort); 
-    //         printf("Client with address %s has connected on port %d\n", clientIPAddress, clientPort);
-    //         connectlist[listnum] = newConnection;
-    //         newConnection = -1;
-    //     }
-    //     if(newConnection != -1)
-    //     {
-    //         /* No room left in the queue! */
-    //         printf("\nNo room left for new client.\n");
-    //         //sock_puts(newConnection,"Sorry, this server is too busy.  Try again later!\r\n");
-    //         close(newConnection);
-    //     }
-    // }
-
+    
     /*Fuege die neue connection bzw. Client in das connectedClients Array */
-
-    if (numConnectedClients >= MAX_CLIENTS) 
-    {
-        printf("Maximale Anzahl von Clients erreicht.\n");
-        exit(EXIT_FAILURE); 
-    }
     // Rufen Sie die Adresse des Remote-Endpunkts ab
     if (getpeername(newConnection, (struct sockaddr *)&sa_client, &sa_len) == -1)
     {
-        perror("Fehler beim Abrufen der Remote-Adresse");
+        perror("getpeername in handle_new_connection()");
         exit(EXIT_FAILURE); 
     }
     // Speichern die Client-Daten in der Datenstruktur
     ClientInfo clientInfo;
     snprintf(clientInfo.hostname, INET6_ADDRSTRLEN, "%s", clientIPAddress);
-    clientInfo.port = clientPort;
-    connectedClients[numConnectedClients] = clientInfo;
-    numConnectedClients++;
+    clientInfo.port = clientPort;  
+    clientInfo.socketFd = newConnection; 
+    //suche einen freien Platz in der Liste von connected clients und speichere die neue Verbindung
+    for(int i = 0; i < MAX_CLIENTS; i++)
+    {
+        if(connectedClients[i].socketFd == 0)
+        {
+            connectedClients[i] = clientInfo; 
+            numConnectedClients++;
+        }
+    }
 }
 
-void deal_with_data(int listnum)
+void deal_with_data(int socketFd)
 {
-    if ((recvRetVal = recv(connectlist[listnum], msgBuffer, sizeof(msgBuffer), 0)) > 0)
+    if ((recvRetVal = recv(socketFd, msgBuffer, sizeof(msgBuffer), 0)) > 0)
     {
         //TODO Auf EOT Zeichen achten
 
         if(strncmp("Get ", msgBuffer, 4) == 0)
         {
-            handleGet(msgBuffer, connectlist[listnum]);
+            handleGet(msgBuffer, socketFd);
         }else
         if(strncmp("Put ", msgBuffer, 4) == 0)
         {
-            handlePut(msgBuffer, connectlist[listnum], sizeof(msgBuffer));
+            handlePut(msgBuffer, socketFd, sizeof(msgBuffer));
         }else
         if(strncmp("Files", msgBuffer, 5) == 0)
         {
-            handleFiles(connectlist[listnum]);
+            handleFiles(socketFd);
         }else
         if(strncmp("List", msgBuffer, 4) == 0)
         {
-            handleList(connectlist[listnum]);
+            handleList(socketFd);
         }
-    }else
+    }
+    printf("Socketfd: %d\n", socketFd); 
     if(recvRetVal == 0)
     {
         /*Wir haben als Return Value von recv() 0 erhalten, das bedeutet ein Client hat die Verbindung zum Server geschlossen*/
-        printf("Client am Socket %d hat Verbindung abgebrochen\n", connectlist[listnum]);
-        printf("Schließe Socket %d\n", connectlist[listnum]);
-        close(connectlist[listnum]);
-        FD_CLR(connectlist[listnum], &read_fdset); //Lösche den fd aus dem Set
-        connectlist[listnum] = 0;
+        printf("Client am Socket %d hat Verbindung abgebrochen\n", socketFd);
+        printf("Schließe Socket %d\n", socketFd);
+        close(socketFd);
+        FD_CLR(socketFd, &read_fdset); //Lösche den fd aus dem Set
+        //Entferne (bzw. Markiere) den client als disconnected damit ein Platz im Array frei wird
+        for(int i = 0; i < MAX_CLIENTS; i++){
+            if(connectedClients[i].socketFd == socketFd)
+            {
+                connectedClients[i].hostname[INET6_ADDRSTRLEN-1] = "\0"; 
+                connectedClients[i].socketFd = 0; 
+                connectedClients[i].port = 0;  
+            }
+        }
+        numConnectedClients--; 
     }else
     {
         //Fehler beim Empfangen der Nachricht
-        perror("recv");
-        close(connectlist[listnum]);
+        perror("recv in deal_with_data");
+        close(socketFd);
         exit(EXIT_FAILURE);
     }
 }
@@ -203,29 +202,39 @@ void deal_with_data(int listnum)
 
 void read_sockets()
 {
-    int listnum;
     if(FD_ISSET(sfd_listener, &read_fdset))
     {
         handle_new_connection();
     }
     /* for (all entries in queue) */
-    for(listnum = 0; listnum < 5; listnum++){
-        if(FD_ISSET(connectlist[listnum], &read_fdset))
-            deal_with_data(listnum);
+    for(int i = 0; i < MAX_CLIENTS; i++)
+    {
+        //connectedClients[i].connected != false  && 
+        if((connectedClients[i].socketFd != 0) && FD_ISSET(connectedClients[i].socketFd, &read_fdset))
+        {
+            deal_with_data(connectedClients[i].socketFd); 
+        }
     }
 }
 
 
-
 int main(int argc, char** argv)
 {
+    for(int i = 0; i < MAX_CLIENTS; i++)
+    {
+        printf("Client %d\n", i); 
+        printf("socketFd: %d\n", connectedClients[i].socketFd);  
+        printf("port: %d\n\n", connectedClients[i].port); 
+    }
+
+
 	memset(msgBuffer, 0, BUFFER_SIZE);
     int yes = 1; // for setsockopt() SO_REUSEADDR, below
 
 	//Speicher den Serverhostname in serverHostname ab. 
 	if(uname(&serverHostname) == -1) 
 	{
-        perror("Error in uname");
+        perror("uname in main()");
         return 1;    
     }
 	if(argc > 2)
@@ -302,29 +311,52 @@ int main(int argc, char** argv)
 		perror("listen");
 		if(close(sfd_listener) < 0)
 		{
-			perror("close"); 
+			perror("close in main()"); 
 		}
 		return EXIT_FAILURE;
 	}
-    maxFd = sfd_listener; /*der letzte fd ist der größte somit sfd_listener*/
+    
     printf("Waiting for TCP connections ... \n");
-    memset((char *) &connectlist, 0, sizeof(connectlist));
+    maxFd = sfd_listener; /*der letzte fd ist der größte somit sfd_listener*/
+
+    
     while (1)
 	{
-        build_select_list();
+
+        //jedes mal nach select muss das fdset neu initialisiert werden
+        FD_ZERO(&read_fdset); 
+        //auch der listener Fd-Socket muss immer wieder eingefügt werden da er nach select nicht gesetzt ist
+        FD_SET(sfd_listener, &read_fdset);
+
+        for(int i = 0; i < MAX_CLIENTS; i++)
+        {
+            if(connectedClients[i].socketFd > 0){
+                FD_SET(connectedClients[i].socketFd, &read_fdset); 
+            }
+            if(connectedClients[i].socketFd > maxFd){
+                maxFd = connectedClients[i].socketFd; 
+            }
+        }
+
         readSockets = select(FD_SETSIZE, &read_fdset, NULL, NULL, NULL);
         if(readSockets == -1)
         {
-            perror("Fehler bei select()");
+            perror("select in main()");
             return EXIT_FAILURE;
         }
         if(readSockets == 0)
         {
             //kein Socket ist ready für read. Zeige einfach das der Server noch läuft.
             printf(".");
-            fflush(stdout);
+            //fflush(stdout);
         }else
         {
+            for (int fd = 0; fd < FD_SETSIZE; fd++) 
+            {
+                if (FD_ISSET(fd, &read_fdset)) {
+                    printf("File descriptor %d is set\n", fd);
+                }   
+            }
             read_sockets();
         }
         /**
@@ -349,36 +381,36 @@ void handleGet(char *arg, int socketFd)
 	FILE *file = fopen(filename, "r");
 	if(file == NULL)
 	{
-		perror("Fehler beim Öffnen der Datei");
+		perror("fopen in handleGet()");
         exit(EXIT_FAILURE);
 	}
 	int fseekRetVal = fseek(file, 0, SEEK_END);
     if(fseekRetVal != 0)
     {
-        perror("Error in fseek");
+        perror("fseek in handleGet()");
         exit(EXIT_FAILURE);
     }
 
 	long fileSize = ftell(file);
     if(fileSize == -1){
-        perror("Error in ftell");
+        perror("ftell in handleGet()");
         exit(EXIT_FAILURE);
     }
 
     fseekRetVal = fseek(file, 0, SEEK_SET);
     if(fseekRetVal != 0)
 	{
-		perror("Error in fseek");
+		perror("fseek in handleGet()");
         exit(EXIT_FAILURE);
 	} 
 
 	char* fileData = (char*)malloc(fileSize); 
 	if(fileData == NULL)
 	{
-		perror("Fehler bei der Speicherzuweisung"); 
+		perror("malloc in handleGet()"); 
 		if(fclose(file) != 0)
 		{
-			perror("Error in flclose"); 
+			perror("fclose nach malloc in handleGet()"); 
 		}
         exit(EXIT_FAILURE);
 	}
@@ -386,17 +418,17 @@ void handleGet(char *arg, int socketFd)
 	size_t bytesRead = fread(fileData, sizeof(char), fileSize, file); 
 	if(bytesRead != (size_t)fileSize)
 	{
-		perror("Fehler beim Lesen der Datei"); 
+		perror("fread in handleGet()"); 
 		if(fclose(file) != 0)
 		{
-			perror("Error in flclose"); 
+			perror("fclose in handleGet()"); 
 		} 
 		free(fileData);
         exit(EXIT_FAILURE);
 	}
 	if(fclose(file) != 0)
 	{
-		perror("Error in fclose");
+		perror("fclose in handleGet()");
         exit(EXIT_FAILURE);
 	} 
 	// Aktuelle Uhrzeit ermitteln
@@ -416,13 +448,13 @@ void handleGet(char *arg, int socketFd)
 	char *response = (char*)malloc(fileSize + 256); 
 	if(response == NULL)
 	{
-		perror("Fehler bei der Speicherzuweisung");
+		perror("malloc für *response in handleGet()");
         exit(EXIT_FAILURE);
 	}
 	sprintf(response, "Datei: %s\nDateigröße: %ld\nLetzte Änderung: %s\n\n%s", filename, fileSize, formattedTime, fileData); 
 	if (send(socketFd, response, strlen(response), 0) == -1)
     {
-        perror("Fehler beim Senden der Daten");
+        perror("send in handleGet()");
         free(fileData);
         free(response);
         exit(EXIT_FAILURE);
@@ -496,9 +528,9 @@ void handleList(int socketFd)
     //char msgBuffer[BUFFER_SIZE];
     
     int counterConnectedClients = 0; 
-    for(int i = 0; i <= 5; i++)
+    for(int i = 0; i <= MAX_CLIENTS; i++)
     {
-        if(connectlist[i] != 0)
+        if(connectedClients[i].socketFd != 0)
         {
             sprintf(msgBuffer, "%s : %d\n",connectedClients[i].hostname, connectedClients[i].port);
             counterConnectedClients++;

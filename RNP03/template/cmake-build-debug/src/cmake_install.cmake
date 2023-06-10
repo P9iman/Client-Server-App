@@ -1,4 +1,4 @@
-# Install script for directory: /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/src
+# Install script for directory: /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/src
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

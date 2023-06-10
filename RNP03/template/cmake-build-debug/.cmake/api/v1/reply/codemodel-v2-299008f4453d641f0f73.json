@@ -57,14 +57,14 @@
 				{
 					"directoryIndex" : 1,
 					"id" : "client::@145eef247bfb46b6828c",
-					"jsonFile" : "target-client-Debug-c23b7703b33c59c31be5.json",
+					"jsonFile" : "target-client-Debug-27939452d5582aec0b57.json",
 					"name" : "client",
 					"projectIndex" : 0
 				},
 				{
 					"directoryIndex" : 1,
 					"id" : "server::@145eef247bfb46b6828c",
-					"jsonFile" : "target-server-Debug-e242ad3284a2827611fc.json",
+					"jsonFile" : "target-server-Debug-640b3eb596e969d48ae6.json",
 					"name" : "server",
 					"projectIndex" : 0
 				}
@@ -74,8 +74,8 @@
 	"kind" : "codemodel",
 	"paths" : 
 	{
-		"build" : "/home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug",
-		"source" : "/home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template"
+		"build" : "/mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug",
+		"source" : "/mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template"
 	},
 	"version" : 
 	{

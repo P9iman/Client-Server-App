@@ -1,5 +1,5 @@
-/snap/clion/237/bin/cmake/linux/x64/bin/cmake -DCMAKE_BUILD_TYPE=Debug -G "CodeBlocks - Unix Makefiles" -S /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template -B /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug
--- The C compiler identification is GNU 11.3.0
+/home/paiman/.cache/JetBrains/RemoteDev/dist/6c3ff81b1df74_CLion-232.7295.14/bin/cmake/linux/x64/bin/cmake -DCMAKE_BUILD_TYPE=Debug -G "CodeBlocks - Unix Makefiles" -S /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template -B /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug
+-- The C compiler identification is GNU 9.4.0
 -- Detecting C compiler ABI info
 -- Detecting C compiler ABI info - done
 -- Check for working C compiler: /usr/bin/cc - skipped
@@ -7,4 +7,4 @@
 -- Detecting C compile features - done
 -- Configuring done
 -- Generating done
--- Build files have been written to: /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug
+-- Build files have been written to: /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug

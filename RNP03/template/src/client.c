@@ -95,6 +95,22 @@ int main(int argc, char** argv)
         }
         if(connect(socketFd, clientInfo->ai_addr, clientInfo->ai_addrlen) == 0)
         {
+            /*Probiere hier den Verbindungsaufbau*/
+            recvRetVal = recv(socketFd, recvMsgBuffer, MSG_BUFFER_SIZE,0);   
+            if(recvRetVal == 0)
+            {
+                printf("Server ist voll. Bitte versuche es später erneut!\n"); 
+                close(socketFd);
+                exit(EXIT_SUCCESS);
+            }else
+            if(recvRetVal > 0)
+            {
+                printf("\nErfolgreich verbunden\n"); 
+            }else
+            {
+                perror("Error in recv"); 
+                exit(EXIT_FAILURE); 
+            }
             //wir konnten uns erfolgreich über einen Socket mit dem Server verbinden
             //printf("Es konnte sich mit dem Server verbunden werden\n ");
             break;
@@ -146,7 +162,8 @@ int main(int argc, char** argv)
    */
   while(1)
   {
-      fgetsRetVal =  fgets(input, INPUT_SIZE, stdin);
+    printf("Client ist Ready...\n");   
+    fgetsRetVal =  fgets(input, INPUT_SIZE, stdin);
       if(fgetsRetVal == NULL)
       {
           fprintf(stderr, "Error: Reading Input from stdin in Line: %d\n", __LINE__);

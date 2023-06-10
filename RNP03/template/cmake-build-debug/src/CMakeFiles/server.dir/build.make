@@ -44,19 +44,19 @@ cmake_force:
 SHELL = /bin/sh
 
 # The CMake executable.
-CMAKE_COMMAND = /snap/clion/237/bin/cmake/linux/x64/bin/cmake
+CMAKE_COMMAND = /home/paiman/.cache/JetBrains/RemoteDev/dist/6c3ff81b1df74_CLion-232.7295.14/bin/cmake/linux/x64/bin/cmake
 
 # The command to remove a file.
-RM = /snap/clion/237/bin/cmake/linux/x64/bin/cmake -E rm -f
+RM = /home/paiman/.cache/JetBrains/RemoteDev/dist/6c3ff81b1df74_CLion-232.7295.14/bin/cmake/linux/x64/bin/cmake -E rm -f
 
 # Escaping for special characters.
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template
+CMAKE_SOURCE_DIR = /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug
+CMAKE_BINARY_DIR = /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug
 
 # Include any dependencies generated for this target.
 include src/CMakeFiles/server.dir/depend.make
@@ -70,18 +70,18 @@ include src/CMakeFiles/server.dir/progress.make
 include src/CMakeFiles/server.dir/flags.make
 
 src/CMakeFiles/server.dir/server.c.o: src/CMakeFiles/server.dir/flags.make
-src/CMakeFiles/server.dir/server.c.o: /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/src/server.c
+src/CMakeFiles/server.dir/server.c.o: /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/src/server.c
 src/CMakeFiles/server.dir/server.c.o: src/CMakeFiles/server.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building C object src/CMakeFiles/server.dir/server.c.o"
-	cd /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src && /usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT src/CMakeFiles/server.dir/server.c.o -MF CMakeFiles/server.dir/server.c.o.d -o CMakeFiles/server.dir/server.c.o -c /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/src/server.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building C object src/CMakeFiles/server.dir/server.c.o"
+	cd /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src && /usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT src/CMakeFiles/server.dir/server.c.o -MF CMakeFiles/server.dir/server.c.o.d -o CMakeFiles/server.dir/server.c.o -c /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/src/server.c
 
 src/CMakeFiles/server.dir/server.c.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing C source to CMakeFiles/server.dir/server.c.i"
-	cd /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src && /usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/src/server.c > CMakeFiles/server.dir/server.c.i
+	cd /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src && /usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/src/server.c > CMakeFiles/server.dir/server.c.i
 
 src/CMakeFiles/server.dir/server.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling C source to assembly CMakeFiles/server.dir/server.c.s"
-	cd /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src && /usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/src/server.c -o CMakeFiles/server.dir/server.c.s
+	cd /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src && /usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/src/server.c -o CMakeFiles/server.dir/server.c.s
 
 # Object files for target server
 server_OBJECTS = \
@@ -93,18 +93,18 @@ server_EXTERNAL_OBJECTS =
 bin/server: src/CMakeFiles/server.dir/server.c.o
 bin/server: src/CMakeFiles/server.dir/build.make
 bin/server: src/CMakeFiles/server.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking C executable ../bin/server"
-	cd /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/server.dir/link.txt --verbose=$(VERBOSE)
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking C executable ../bin/server"
+	cd /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/server.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
 src/CMakeFiles/server.dir/build: bin/server
 .PHONY : src/CMakeFiles/server.dir/build
 
 src/CMakeFiles/server.dir/clean:
-	cd /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src && $(CMAKE_COMMAND) -P CMakeFiles/server.dir/cmake_clean.cmake
+	cd /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src && $(CMAKE_COMMAND) -P CMakeFiles/server.dir/cmake_clean.cmake
 .PHONY : src/CMakeFiles/server.dir/clean
 
 src/CMakeFiles/server.dir/depend:
-	cd /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/src /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src /home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src/CMakeFiles/server.dir/DependInfo.cmake --color=$(COLOR)
+	cd /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/src /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src /mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src/CMakeFiles/server.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : src/CMakeFiles/server.dir/depend
 
