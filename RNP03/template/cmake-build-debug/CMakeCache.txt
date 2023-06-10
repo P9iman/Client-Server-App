@@ -50,7 +50,7 @@ CMAKE_C_COMPILER_AR:FILEPATH=/usr/bin/gcc-ar-11
 CMAKE_C_COMPILER_RANLIB:FILEPATH=/usr/bin/gcc-ranlib-11
 
 //Enable ASAN
-CMAKE_C_FLAGS:STRING= -fsanitize=address -fno-omit-frame-pointer
+CMAKE_C_FLAGS:STRING= -fsanitize=address -fno-omit-frame-pointer -fsanitize=address -fno-omit-frame-pointer -fsanitize=address -fno-omit-frame-pointer
 
 //Flags used by the C compiler during DEBUG builds.
 CMAKE_C_FLAGS_DEBUG:STRING=-g

@@ -31,7 +31,6 @@ int sendQuitRequest(int socketFd);
 
 int main(int argc, char** argv)
 {
-
   char serverIP[INET6_ADDRSTRLEN];
   char *port = NULL; 
   char *serverAddr = NULL;
@@ -90,17 +89,18 @@ int main(int argc, char** argv)
   for(p = clientInfo; p != NULL; p = p->ai_next)
   {
       socketFd = socket(clientInfo->ai_family, clientInfo->ai_socktype, clientInfo->ai_protocol);
-    if(socketFd < 0)
+      if(socketFd < 0)
     {
-      continue;
+    continue;
     }
     if(connect(socketFd, clientInfo->ai_addr, clientInfo->ai_addrlen) == 0)
     {
-      //wir konnten uns erfolgreich über einen Socket mit dem Server verbinden
-      break; 
+        //wir konnten uns erfolgreich über einen Socket mit dem Server verbinden
+        //printf("Es konnte sich mit dem Server verbunden werden\n ");
+        break;
     }else
     {
-        //wir konnten eine Verbindung aufbauen, somit schließe den geöffnete Socket und probiere die nächste Adresse
+        //wir konnten keine Verbindung aufbauen, somit schließe den geöffnete Socket und probiere die nächste Adresse
         close(socketFd);
     }
   }
@@ -111,6 +111,11 @@ int main(int argc, char** argv)
       fprintf(stderr, "client: failed to connect\n");
       return 1;
   }
+    char hostIPAddr[MAX_HOSTNAME_SIZE];
+    struct addrinfo* ret;
+    getaddrinfo(hostname, "echo", NULL, &ret);
+    inet_ntop(AF_INET, (struct sockaddr*)ret, hostIPAddr, sizeof (hostIPAddr));
+    printf("Client IP Address: %s\n", hostIPAddr);
 
   inet_ntop(p->ai_family, get_in_addr((struct sockaddr*) p->ai_addr),serverIP, sizeof(serverIP));
   printf("client: connecting to %s\n", serverIP);
@@ -130,6 +135,9 @@ int main(int argc, char** argv)
       if(fgetsRetVal == NULL)
       {
           fprintf(stderr, "Error: Reading Input from stdin in Line: %d\n", __LINE__);
+      }else
+      {
+          printf("OK\n");
       }
       //input[strcspn(input, "\n")] = '\0';
 
@@ -149,7 +157,8 @@ int main(int argc, char** argv)
               continue;
           }
           errorCode = sendGetRequest(socketFd, filename);
-      } else if (strcmp(command, "Put") == 0)
+      }else
+      if (strcmp(command, "Put") == 0)
       {
           if (strlen(filename) == 0)
           {
@@ -173,8 +182,7 @@ int main(int argc, char** argv)
       {
           printf("Ungültiger Befehl!\n");
           continue;
-      }
-      if(errorCode == 0)
+      }if(errorCode == 0)
       {
           recvRetVal =  recv(socketFd,recvMsgBuffer,MSG_BUFFER_SIZE, 0);
           if(recvRetVal < 0)
@@ -186,7 +194,7 @@ int main(int argc, char** argv)
           }
       }else
       {
-          switch (errorCode)
+          switch(errorCode)
           {
               case ERROR_LIST : printf("List-Request konnte nicht geschickt werden!\n");
               break;
@@ -196,6 +204,8 @@ int main(int argc, char** argv)
                 break;
               case ERROR_GET : printf("Get-Request konnte nicht geschickt werden!\n");
                   break;
+              default: printf("Unknown Error\n");
+                break;
           }
           continue;
       }
@@ -270,7 +280,7 @@ int sendListRequest(int socketFd)
 
 int sendQuitRequest(int socketFd)
 {
-    char* msgBuffer = NULL;
+    char* msgBuffer = {0};
     if(send(socketFd,msgBuffer, 0, 0) == -1)
     {
         return ERROR_QUIT;

@@ -6,5 +6,5 @@ C_DEFINES =
 
 C_INCLUDES = 
 
-C_FLAGS =  -fsanitize=address -fno-omit-frame-pointer -g -fdiagnostics-color=always -g -O2 -Werror -Wall -Wextra -fsanitize=address -fno-omit-frame-pointer
+C_FLAGS =  -fsanitize=address -fno-omit-frame-pointer -fsanitize=address -fno-omit-frame-pointer -fsanitize=address -fno-omit-frame-pointer -g -fdiagnostics-color=always -g -O2 -Wall -fsanitize=address -fno-omit-frame-pointer
 

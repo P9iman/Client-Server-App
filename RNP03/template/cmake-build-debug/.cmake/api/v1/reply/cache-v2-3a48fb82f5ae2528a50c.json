@@ -255,7 +255,7 @@
 				}
 			],
 			"type" : "STRING",
-			"value" : " -fsanitize=address -fno-omit-frame-pointer"
+			"value" : " -fsanitize=address -fno-omit-frame-pointer -fsanitize=address -fno-omit-frame-pointer -fsanitize=address -fno-omit-frame-pointer"
 		},
 		{
 			"name" : "CMAKE_C_FLAGS_DEBUG",

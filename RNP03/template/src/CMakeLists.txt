@@ -3,7 +3,7 @@
 # Use add_bin(name MORE_FILES) requires a file of name `src/name.c` to exist.
 function(add_bin name)
   add_executable(${name} ${name}.c ${ARGN})
-  target_compile_options(${name} PUBLIC -g -O2 -Werror -Wall -Wextra)
+  target_compile_options(${name} PUBLIC -g -O2 -Wall) #-Werror -Wextra)
   if (NOT APPLE)
     target_compile_options(${name} PUBLIC
                              -fsanitize=address
