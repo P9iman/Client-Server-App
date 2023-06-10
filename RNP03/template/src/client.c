@@ -31,101 +31,116 @@ int sendQuitRequest(int socketFd);
 
 int main(int argc, char** argv)
 {
-  char serverIP[INET6_ADDRSTRLEN];
-  char *port = NULL; 
-  char *serverAddr = NULL;
-  char hostname[MAX_HOSTNAME_SIZE]; 
-  memset(hostname, 0, MAX_HOSTNAME_SIZE); 
-  char recvMsgBuffer[MSG_BUFFER_SIZE];
-  ssize_t recvRetVal = 0;
-  int errorCode;
+    char serverIP[INET6_ADDRSTRLEN];
+    char *port = NULL; 
+    char *serverAddr = NULL;
+    char hostname[MAX_HOSTNAME_SIZE]; 
+    memset(hostname, 0, MAX_HOSTNAME_SIZE); 
+    char recvMsgBuffer[MSG_BUFFER_SIZE];
+    ssize_t recvRetVal = 0;
+    int errorCode;
 
-  //Über diesen Socket findet die Kommunikation mit dem Server statt
-  int socketFd;
+    //Über diesen Socket findet die Kommunikation mit dem Server statt
+    int socketFd;
 
-  /*socket Konfiguration mit addrinfo und getaddrinfo() */
+    /*socket Konfiguration mit addrinfo und getaddrinfo() */
 
-  int getaddrinfoRetVal; 
-  struct addrinfo *p;
-  struct addrinfo hints; 
-  struct addrinfo *clientInfo; 
-  memset(&hints, 0, sizeof hints);
-  hints.ai_family = AF_UNSPEC; 
-  hints.ai_socktype = SOCK_STREAM; 
-  hints.ai_protocol = IPPROTO_TCP; 
-  
-  int getHostNameRetVal = gethostname(hostname, sizeof(hostname));
-  if(getHostNameRetVal == -1)
-  {
-      perror("gethostname()");
-      return 1; 
-  }else
-  {
-      printf("Client started on %s\n", hostname); 
-  }
+    int getaddrinfoRetVal; 
+    struct addrinfo *p;
+    struct addrinfo hints; 
+    struct addrinfo *clientInfo; 
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC; 
+    hints.ai_socktype = SOCK_STREAM; 
+    hints.ai_protocol = IPPROTO_TCP; 
 
-  /*Parse Server-Kontakt: also DNS-Name oder IPv4/IPv6 Adresse sowie Port des Servers*/
-  if(argc != 3) //argc muss 3 sein da der Programmname immer das erste Argument ist, dann kommen DNS-Name/IPv4/6 (1. Argument) und Port (2. Argument)
-  {
-    printf("Connecting failed!\nUsage: ./server [DNS-Name or IPv4/IPv6 Address] [Port]\n"); 
-    return 1; 
-  }else
-  {
-    serverAddr = argv[1]; 
-    port = argv[2];
-  }
+    int getHostNameRetVal = gethostname(hostname, sizeof(hostname));
+    if(getHostNameRetVal == -1)
+    {
+        perror("gethostname()");
+        return 1; 
+    }else
+    {
+        printf("Client started on %s\n", hostname); 
+    }
 
-  getaddrinfoRetVal = getaddrinfo(serverAddr, port, &hints, &clientInfo);
-  if( getaddrinfoRetVal != 0)
-  {
-    fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(getaddrinfoRetVal));
-    return 1;
-  }
+    /*Parse Server-Kontakt: also DNS-Name oder IPv4/IPv6 Adresse sowie Port des Servers*/
+    if(argc != 3) //argc muss 3 sein da der Programmname immer das erste Argument ist, dann kommen DNS-Name/IPv4/6 (1. Argument) und Port (2. Argument)
+    {
+        printf("Connecting failed!\nUsage: ./server [DNS-Name or IPv4/IPv6 Address] [Port]\n"); 
+        return 1; 
+    }else
+    {
+        serverAddr = argv[1]; 
+        port = argv[2];
+    }
+
+    getaddrinfoRetVal = getaddrinfo(serverAddr, port, &hints, &clientInfo);
+    if( getaddrinfoRetVal != 0)
+    {
+        fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(getaddrinfoRetVal));
+        return 1;
+    }
     /*  getaddrinfo() liefert uns  ein Liste mit address structures.
         Wir probieren jede Adresse aus bis wir erfolgreich connect()en.
         Wenn socket(2) (or connect(2)) fehlschlägt, schließen wir den socket und
         probieren die nächste Adresse.
     */
-  for(p = clientInfo; p != NULL; p = p->ai_next)
-  {
-      socketFd = socket(clientInfo->ai_family, clientInfo->ai_socktype, clientInfo->ai_protocol);
-      if(socketFd < 0)
+    for(p = clientInfo; p != NULL; p = p->ai_next)
     {
-    continue;
+        socketFd = socket(clientInfo->ai_family, clientInfo->ai_socktype, clientInfo->ai_protocol);
+        if(socketFd < 0)
+        {
+            continue;
+        }
+        if(connect(socketFd, clientInfo->ai_addr, clientInfo->ai_addrlen) == 0)
+        {
+            //wir konnten uns erfolgreich über einen Socket mit dem Server verbinden
+            //printf("Es konnte sich mit dem Server verbunden werden\n ");
+            break;
+        }else
+        {
+            //wir konnten keine Verbindung aufbauen, somit schließe den geöffnete Socket und probiere die nächste Adresse
+            close(socketFd);
+        }
     }
-    if(connect(socketFd, clientInfo->ai_addr, clientInfo->ai_addrlen) == 0)
+
+    if (p == NULL)
     {
-        //wir konnten uns erfolgreich über einen Socket mit dem Server verbinden
-        //printf("Es konnte sich mit dem Server verbunden werden\n ");
-        break;
-    }else
-    {
-        //wir konnten keine Verbindung aufbauen, somit schließe den geöffnete Socket und probiere die nächste Adresse
-        close(socketFd);
+        freeaddrinfo(clientInfo);
+        fprintf(stderr, "client: failed to connect\n");
+        return 1;
     }
-  }
+    // char hostIPAddr[MAX_HOSTNAME_SIZE];
+    // struct addrinfo* ret;
+    // getaddrinfo(hostname, "echo", NULL, &ret);
+    // inet_ntop(AF_INET, (struct sockaddr*)ret, hostIPAddr, sizeof (hostIPAddr));
+    // printf("Client IP Address: %s\n", hostIPAddr);
 
-  if (p == NULL)
-  {
-      freeaddrinfo(clientInfo);
-      fprintf(stderr, "client: failed to connect\n");
-      return 1;
-  }
-    char hostIPAddr[MAX_HOSTNAME_SIZE];
-    struct addrinfo* ret;
-    getaddrinfo(hostname, "echo", NULL, &ret);
-    inet_ntop(AF_INET, (struct sockaddr*)ret, hostIPAddr, sizeof (hostIPAddr));
-    printf("Client IP Address: %s\n", hostIPAddr);
+    struct sockaddr_in clientIPAddr; 
+    socklen_t clientIPAddrLen; 
+    if (getpeername(socketFd, (struct sockaddr *)&clientIPAddr, &clientIPAddrLen) == -1)
+    {
+        perror("Fehler beim Abrufen der Remote-Adresse");
+        return 1;
+    }
+    char clientIP[INET_ADDRSTRLEN];
+    if (inet_ntop(AF_INET, &(clientIPAddr.sin_addr), clientIP, INET_ADDRSTRLEN) == NULL) {
+        perror("Fehler beim Konvertieren der IP-Adresse");
+        return 1;
+    }
+    printf("Client IP-address: %s\n", clientIP);
 
-  inet_ntop(p->ai_family, get_in_addr((struct sockaddr*) p->ai_addr),serverIP, sizeof(serverIP));
-  printf("client: connecting to %s\n", serverIP);
-  //Die Liste mit Adresse wird nicht mehr benötigt
-  freeaddrinfo(clientInfo);
 
-  char input[INPUT_SIZE];
-  char filename[FILENAME_SIZE];
-  char command[COMMAND_SIZE];
-  char* fgetsRetVal;
+    inet_ntop(p->ai_family, get_in_addr((struct sockaddr*) p->ai_addr),serverIP, sizeof(serverIP));
+    printf("Client connecting to %s\n", serverIP);
+    //Die Liste mit Adresse wird nicht mehr benötigt
+    freeaddrinfo(clientInfo);
+
+    char input[INPUT_SIZE];
+    char filename[FILENAME_SIZE];
+    char command[COMMAND_SIZE];
+    char* fgetsRetVal;
   /**
    * In dieser Schleife werden die Befehle vom Client angenommen
    */
@@ -135,9 +150,6 @@ int main(int argc, char** argv)
       if(fgetsRetVal == NULL)
       {
           fprintf(stderr, "Error: Reading Input from stdin in Line: %d\n", __LINE__);
-      }else
-      {
-          printf("OK\n");
       }
       //input[strcspn(input, "\n")] = '\0';
 

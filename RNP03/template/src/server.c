@@ -3,6 +3,7 @@
 #include <string.h>
 #include <time.h>
 #include <stdlib.h>
+#include <bool.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -18,6 +19,7 @@
 #define DEFAULT_PORT 0
 #define BUFFER_SIZE 256
 #define HOSTNAME_SIZE 50
+#define MAX_CLIENTS 5
 
 #define EOT '\x04'
 
@@ -29,11 +31,12 @@ void handleGet(char *arg, int socketFd);
 void handlePut(char *arg, int socketFd, int dataLength);
 void *get_in_addr(struct sockaddr *sa);
 void setnonblocking(int socket);
+void convertAddressToString(const struct sockaddr_storage *addr, char *ip, size_t ipSize, int *port);
 
 struct utsname serverHostname;
 int sfd_listener; /*sfd_listener = Socket-File-Diskreptor für listening*/
 int readSockets = 0; /*Hier drinn steht der RetVal von select, also die Anzahl an readable Sockets*/
-int connectlist[5];  /* Array of connected sockets so we know who we are talking to */
+int connectlist[MAX_CLIENTS];  /* Array of connected sockets so we know who we are talking to */
 
 fd_set read_fdset; /*in diesem Set mit File-Discreptoren sind die fds für die Sockets aus denen gelesen werden soll*/
 
@@ -52,6 +55,14 @@ char msgBuffer[BUFFER_SIZE];
 //Return Value vom recv
 ssize_t recvRetVal;
 
+/*Struct um beim List Request einfach die Clienten zurückzugeben*/
+typedef struct{
+    char hostname[INET6_ADDRSTRLEN];
+    int port;
+    bool connected, 
+}ClientInfo;
+ClientInfo connectedClients[MAX_CLIENTS]; 
+int numConnectedClients = 0;  
 
 
 void setnonblocking(int socket)
@@ -75,7 +86,7 @@ void build_select_list()
     FD_ZERO(&read_fdset);
     //fuege den Socket fd in das read_fdset
     FD_SET(sfd_listener, &read_fdset);
-    for (listnum = 0; listnum < 5; listnum++)
+    for (listnum = 0; listnum < MAX_CLIENTS; listnum++)
     {
         if (connectlist[listnum] != 0)
         {
@@ -86,10 +97,19 @@ void build_select_list()
     }
 }
 
+void build_select_list_New()
+{
+    
+}
+
+
 void handle_new_connection()
 {
+    /*Handle hier die neue connection*/
+
     int listnum;
     int newConnection;
+    int clientPort;
     newConnection = accept(sfd_listener, (struct sockaddr *)&sa_client, &sa_len);
     if(newConnection < 0)
     {
@@ -97,27 +117,47 @@ void handle_new_connection()
         exit(EXIT_FAILURE);
     }
     setnonblocking(newConnection);
-    for(listnum = 0; (listnum < 5) && (newConnection != -1); listnum++)
+    convertAddressToString(&sa_client,clientIPAddress, sizeof(clientIPAddress),&clientPort); 
+    printf("Client with address %s has connected on port %d\n", clientIPAddress, clientPort);
+    connectlist[listnum] = newConnection;
+
+    // for(listnum = 0; (listnum < 5) && (newConnection != -1); listnum++)
+    // {
+    //     if(connectlist[listnum] == 0)
+    //     {
+    //         convertAddressToString(&sa_client,clientIPAddress, sizeof(clientIPAddress),&clientPort); 
+    //         printf("Client with address %s has connected on port %d\n", clientIPAddress, clientPort);
+    //         connectlist[listnum] = newConnection;
+    //         newConnection = -1;
+    //     }
+    //     if(newConnection != -1)
+    //     {
+    //         /* No room left in the queue! */
+    //         printf("\nNo room left for new client.\n");
+    //         //sock_puts(newConnection,"Sorry, this server is too busy.  Try again later!\r\n");
+    //         close(newConnection);
+    //     }
+    // }
+
+    /*Fuege die neue connection bzw. Client in das connectedClients Array */
+
+    if (numConnectedClients >= MAX_CLIENTS) 
     {
-        if(connectlist[listnum] == 0)
-        {
-            char const *inet_ntop_retVal;
-            //printen die IP-Adresse mittels inet_ntop von dem Clienten um sicher zugehen das, das accept erfolgreich war.
-            inet_ntop_retVal = inet_ntop(sa_client.ss_family, get_in_addr((struct sockaddr *) &sa_client),
-                                         clientIPAddress, INET6_ADDRSTRLEN);
-            inet_ntop_retVal == NULL ? perror("inet_ntop Fehler beim Konvertieren der Adresse") :
-            printf("\nClient hat sich verbunden mit der Adresse: %s am Socket: %d\n", clientIPAddress, newConnection);
-            connectlist[listnum] = newConnection;
-            newConnection = -1;
-        }
-        if(newConnection != -1)
-        {
-            /* No room left in the queue! */
-            printf("\nNo room left for new client.\n");
-            //sock_puts(newConnection,"Sorry, this server is too busy.  Try again later!\r\n");
-            close(newConnection);
-        }
+        printf("Maximale Anzahl von Clients erreicht.\n");
+        exit(EXIT_FAILURE); 
     }
+    // Rufen Sie die Adresse des Remote-Endpunkts ab
+    if (getpeername(newConnection, (struct sockaddr *)&sa_client, &sa_len) == -1)
+    {
+        perror("Fehler beim Abrufen der Remote-Adresse");
+        exit(EXIT_FAILURE); 
+    }
+    // Speichern die Client-Daten in der Datenstruktur
+    ClientInfo clientInfo;
+    snprintf(clientInfo.hostname, INET6_ADDRSTRLEN, "%s", clientIPAddress);
+    clientInfo.port = clientPort;
+    connectedClients[numConnectedClients] = clientInfo;
+    numConnectedClients++;
 }
 
 void deal_with_data(int listnum)
@@ -229,7 +269,7 @@ int main(int argc, char** argv)
 	{
         //TODO Hier Änderung vorgenommen letzte Argument von Socket
 		sfd_listener = socket(p->ai_family, p->ai_socktype, 0);
-        printf("FD vom listenere Socket: %d\n", sfd_listener);
+        printf("Socket-FD of listener: %d\n", sfd_listener);
 		if(sfd_listener < 0)
 		{
 			continue;
@@ -240,7 +280,6 @@ int main(int argc, char** argv)
 		if(bind(sfd_listener, (struct sockaddr*)p->ai_addr, p->ai_addrlen) == 0)
 		{
             //Der fd sfd_listener konnte erfolgreich mit der Socketadresse gebunden werden
-            printf("Binding SocketFD: %d to sockAddr succeeded!\n", sfd_listener);
 			break;
 		}else
         {
@@ -455,33 +494,17 @@ void handlePut(char *arg, int socketFd, int dataLength)
 void handleList(int socketFd)
 {
     //char msgBuffer[BUFFER_SIZE];
-    int port;
-    char clientHostName[HOSTNAME_SIZE];
-    struct sockaddr_storage sa_client_addr;
-    socklen_t sa_len_addr = sizeof(struct sockaddr_storage);
-    for(int i = 0; i <= maxFd; i++)
+    
+    int counterConnectedClients = 0; 
+    for(int i = 0; i <= 5; i++)
     {
-        int retVal = getpeername(i, (struct sockaddr*)&sa_client_addr, &sa_len_addr);
-        if(retVal == -1){
-            perror("Error in getpeername");
-            continue;
-        }else
+        if(connectlist[i] != 0)
         {
-            getnameinfo((struct sockaddr*)&sa_client,sa_len,clientHostName, sizeof(clientHostName), NULL, 0, 0);
-            if(sa_client.ss_family == AF_INET)
-            {
-                struct sockaddr_in* sa_IPv4_client = (struct sockaddr_in*)&sa_client;
-                port = sa_IPv4_client->sin_port;
-            }else
-            {
-                struct sockaddr_in6* sa_IPv6_client = (struct sockaddr_in6*)&sa_client;
-                port = sa_IPv6_client->sin6_port;
-            }
-            sprintf(msgBuffer, "%s : %d\n",clientHostName, port);
+            sprintf(msgBuffer, "%s : %d\n",connectedClients[i].hostname, connectedClients[i].port);
+            counterConnectedClients++;
         }
     }
-    sprintf(msgBuffer, "%d Clients verbunden\n", maxFd);
-
+    sprintf(msgBuffer, "%d Clients verbunden\n", counterConnectedClients);
     if(send(socketFd, msgBuffer, sizeof(msgBuffer), 0) == -1)
     {
         perror("Error in send");
@@ -536,11 +559,11 @@ void handleFiles(int socketFd)
             // Letzte Änderungszeit
             modified_time = localtime(&file_stat.st_mtime);
             strftime(modified_time_str, sizeof(modified_time_str), "%Y-%m-%d %H:%M:%S", modified_time);
-            sprintf(msgBuffer, "%s : %s %lld",entry->d_name,  modified_time_str, (long long)file_stat.st_size);
+            sprintf(msgBuffer, "%s : %s %lld\n",entry->d_name,  modified_time_str, (long long)file_stat.st_size);
             numFiles++;
         }
     }
-    sprintf(msgBuffer, "%d Dateien", numFiles);
+    sprintf(msgBuffer, "%d Dateien\n", numFiles);
     // Verzeichnis schließen
     closedir(dir);
 
@@ -563,4 +586,19 @@ void *get_in_addr(struct sockaddr *sa)
 	{
 		return &(((struct sockaddr_in6*)sa)->sin6_addr); 
 	}
+}
+
+void convertAddressToString(const struct sockaddr_storage *addr, char *ip, size_t ipSize, int *port) {
+    if (addr->ss_family == AF_INET) {
+        struct sockaddr_in *ipv4 = (struct sockaddr_in *)addr;
+        inet_ntop(AF_INET, &(ipv4->sin_addr), ip, ipSize);
+        *port = ntohs(ipv4->sin_port);
+    } else if (addr->ss_family == AF_INET6) {
+        struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)addr;
+        inet_ntop(AF_INET6, &(ipv6->sin6_addr), ip, ipSize);
+        *port = ntohs(ipv6->sin6_port);
+    } else {
+        printf("Unbekannte Adressfamilie.\n");
+        *port = -1;  // Setzen Sie den Port auf einen ungültigen Wert, um anzuzeigen, dass die Adressfamilie unbekannt ist
+    }
 }
