@@ -34,8 +34,6 @@ int main(int argc, char** argv)
     char serverIP[INET6_ADDRSTRLEN];
     char *port = NULL; 
     char *serverAddr = NULL;
-    char hostname[MAX_HOSTNAME_SIZE]; 
-    memset(hostname, 0, MAX_HOSTNAME_SIZE); 
     char recvMsgBuffer[MSG_BUFFER_SIZE];
     ssize_t recvRetVal = 0;
     int errorCode;
@@ -54,16 +52,6 @@ int main(int argc, char** argv)
     hints.ai_socktype = SOCK_STREAM; 
     hints.ai_protocol = IPPROTO_TCP; 
 
-    int getHostNameRetVal = gethostname(hostname, sizeof(hostname));
-    if(getHostNameRetVal == -1)
-    {
-        perror("gethostname()");
-        return 1; 
-    }else
-    {
-        printf("Client started on %s\n", hostname); 
-    }
-
     /*Parse Server-Kontakt: also DNS-Name oder IPv4/IPv6 Adresse sowie Port des Servers*/
     if(argc != 3) //argc muss 3 sein da der Programmname immer das erste Argument ist, dann kommen DNS-Name/IPv4/6 (1. Argument) und Port (2. Argument)
     {
@@ -76,7 +64,7 @@ int main(int argc, char** argv)
     }
 
     getaddrinfoRetVal = getaddrinfo(serverAddr, port, &hints, &clientInfo);
-    if( getaddrinfoRetVal != 0)
+    if(getaddrinfoRetVal != 0)
     {
         fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(getaddrinfoRetVal));
         return 1;
@@ -105,7 +93,7 @@ int main(int argc, char** argv)
             }else
             if(recvRetVal > 0)
             {
-                printf("\nErfolgreich verbunden\n"); 
+                printf("Erfolgreich verbunden\n"); 
             }else
             {
                 perror("Error in recv"); 
@@ -127,21 +115,28 @@ int main(int argc, char** argv)
         fprintf(stderr, "client: failed to connect\n");
         return 1;
     }
-    // char hostIPAddr[MAX_HOSTNAME_SIZE];
-    // struct addrinfo* ret;
-    // getaddrinfo(hostname, "echo", NULL, &ret);
-    // inet_ntop(AF_INET, (struct sockaddr*)ret, hostIPAddr, sizeof (hostIPAddr));
-    // printf("Client IP Address: %s\n", hostIPAddr);
+  
+    // struct sockaddr_in clientIPAddr; 
+    // socklen_t clientIPAddrLen; 
+    // if (getpeername(socketFd, (struct sockaddr *)&clientIPAddr, &clientIPAddrLen) == -1)
+    // {
+    //     freeaddrinfo(clientInfo);
+    //     perror("Fehler beim Abrufen der Remote-Adresse");
+    //     return 1;
+    // }
 
-    struct sockaddr_in clientIPAddr; 
-    socklen_t clientIPAddrLen; 
-    if (getpeername(socketFd, (struct sockaddr *)&clientIPAddr, &clientIPAddrLen) == -1)
+    struct sockaddr_storage clientIPAddr; 
+    socklen_t clientIPAddrLen = sizeof(clientIPAddr); 
+    if(getpeername(socketFd, (struct sockaddr *)&clientIPAddr,clientIPAddrLen) == -1)
     {
+        freeaddrinfo(clientInfo);
         perror("Fehler beim Abrufen der Remote-Adresse");
-        return 1;
+        return 1;        
     }
     char clientIP[INET_ADDRSTRLEN];
-    if (inet_ntop(AF_INET, &(clientIPAddr.sin_addr), clientIP, INET_ADDRSTRLEN) == NULL) {
+    if (inet_ntop(AF_INET, &(clientIPAddr.sin_addr), clientIP, INET_ADDRSTRLEN) == NULL)
+    {
+        freeaddrinfo(clientInfo);
         perror("Fehler beim Konvertieren der IP-Adresse");
         return 1;
     }
@@ -162,7 +157,6 @@ int main(int argc, char** argv)
    */
   while(1)
   {
-    printf("Client ist Ready...\n");   
     fgetsRetVal =  fgets(input, INPUT_SIZE, stdin);
       if(fgetsRetVal == NULL)
       {

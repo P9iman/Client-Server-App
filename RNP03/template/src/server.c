@@ -31,7 +31,8 @@ void handleGet(char *arg, int socketFd);
 void handlePut(char *arg, int socketFd, int dataLength);
 void *get_in_addr(struct sockaddr *sa);
 void setnonblocking(int socket);
-void convertAddressToString(const struct sockaddr_storage *addr, char *ip, size_t ipSize, int *port);
+void convertAddressToString(struct sockaddr *addr, char *ip, size_t ipSize, int *port);
+int getPort(int fd);
 
 struct utsname serverHostname;
 int sfd_listener; /*sfd_listener = Socket-File-Diskreptor für listening*/
@@ -123,7 +124,7 @@ void handle_new_connection()
         exit(EXIT_FAILURE);  
     }
     setnonblocking(newConnection);
-    convertAddressToString(&sa_client,clientIPAddress, sizeof(clientIPAddress),&clientPort); 
+    convertAddressToString((struct sockaddr *)&sa_client,clientIPAddress, sizeof(clientIPAddress),&clientPort); 
     printf("Client with address %s has connected on port %d\n", clientIPAddress, clientPort);
     
     /*Fuege die neue connection bzw. Client in das connectedClients Array */
@@ -171,20 +172,22 @@ void deal_with_data(int socketFd)
         {
             handleList(socketFd);
         }
-    }
-    printf("Socketfd: %d\n", socketFd); 
+    }else
     if(recvRetVal == 0)
     {
         /*Wir haben als Return Value von recv() 0 erhalten, das bedeutet ein Client hat die Verbindung zum Server geschlossen*/
-        printf("Client am Socket %d hat Verbindung abgebrochen\n", socketFd);
-        printf("Schließe Socket %d\n", socketFd);
+        //printf("Client am Socket %d hat Verbindung abgebrochen\n", socketFd);
+        // printf("Schließe Socket %d\n", socketFd);
+        int port = getPort(socketFd); 
+        printf("Client on Port %d disconnected\nClosing Port %d\n",port,port); 
         close(socketFd);
         FD_CLR(socketFd, &read_fdset); //Lösche den fd aus dem Set
         //Entferne (bzw. Markiere) den client als disconnected damit ein Platz im Array frei wird
         for(int i = 0; i < MAX_CLIENTS; i++){
             if(connectedClients[i].socketFd == socketFd)
             {
-                connectedClients[i].hostname[INET6_ADDRSTRLEN-1] = "\0"; 
+                // connectedClients[i].hostname[INET6_ADDRSTRLEN-1] = "\0"; 
+                memset(connectedClients[i].hostname, 0, INET6_ADDRSTRLEN);
                 connectedClients[i].socketFd = 0; 
                 connectedClients[i].port = 0;  
             }
@@ -220,14 +223,6 @@ void read_sockets()
 
 int main(int argc, char** argv)
 {
-    for(int i = 0; i < MAX_CLIENTS; i++)
-    {
-        printf("Client %d\n", i); 
-        printf("socketFd: %d\n", connectedClients[i].socketFd);  
-        printf("port: %d\n\n", connectedClients[i].port); 
-    }
-
-
 	memset(msgBuffer, 0, BUFFER_SIZE);
     int yes = 1; // for setsockopt() SO_REUSEADDR, below
 
@@ -271,14 +266,15 @@ int main(int argc, char** argv)
 		return 1; 
 	}
     //Printe die IP Adresse vom Server
-    inet_ntop(serverInfo->ai_family, get_in_addr(serverInfo->ai_addr), serverIPAddress, INET6_ADDRSTRLEN);
-    printf("Server IP Adresse: %s\n", serverIPAddress);
+    // inet_ntop(serverInfo->ai_family, get_in_addr(serverInfo->ai_addr), serverIPAddress, INET6_ADDRSTRLEN);
+
+    convertAddressToString(serverInfo->ai_addr, serverIPAddress, sizeof(clientIPAddress), NULL); 
+    printf("Server IP Adresse: %s\nServer listening on Port: %s\n\n", serverIPAddress, serverPort);
 
     for(p = serverInfo; p != NULL; p = p->ai_next)
 	{
         //TODO Hier Änderung vorgenommen letzte Argument von Socket
 		sfd_listener = socket(p->ai_family, p->ai_socktype, 0);
-        printf("Socket-FD of listener: %d\n", sfd_listener);
 		if(sfd_listener < 0)
 		{
 			continue;
@@ -319,7 +315,10 @@ int main(int argc, char** argv)
     printf("Waiting for TCP connections ... \n");
     maxFd = sfd_listener; /*der letzte fd ist der größte somit sfd_listener*/
 
-    
+    /**
+     *  Iteriere über die Menge der FD um entweder auf neue Verbindungen zu reagieren (also wenn sich der fd Zustand von sfd_listener verändert hat)
+     *  oder wenn einer der Socket FD für communication ready ist, darauf zu reagieren um Nachrichten (mit recv) zu erhalten.
+     */
     while (1)
 	{
 
@@ -351,18 +350,8 @@ int main(int argc, char** argv)
             //fflush(stdout);
         }else
         {
-            for (int fd = 0; fd < FD_SETSIZE; fd++) 
-            {
-                if (FD_ISSET(fd, &read_fdset)) {
-                    printf("File descriptor %d is set\n", fd);
-                }   
-            }
             read_sockets();
         }
-        /**
-         *  Iteriere über die Menge der FD um entweder auf neue Verbindungen zu reagieren (also wenn sich der fd Zustand von sfd_listener verändert hat)
-         *  oder wenn einer der Socket FD für communication ready ist, darauf zu reagieren um Nachrichten (mit recv) zu erhalten.
-         */
 	}
 }
 
@@ -606,31 +595,38 @@ void handleFiles(int socketFd)
     }
 }
 
-/**
- * @brief Diese Hilfsfunktion liefert die Socketadresse sowohl für IPv4 als auch für IPv6
-*/
-void *get_in_addr(struct sockaddr *sa)
+void convertAddressToString(struct sockaddr *addr, char *ip, size_t ipSize, int *port) 
 {
-	if(sa->sa_family == AF_INET)
-	{
-		return &(((struct sockaddr_in*)sa)->sin_addr);
-	}else
-	{
-		return &(((struct sockaddr_in6*)sa)->sin6_addr); 
-	}
-}
-
-void convertAddressToString(const struct sockaddr_storage *addr, char *ip, size_t ipSize, int *port) {
-    if (addr->ss_family == AF_INET) {
-        struct sockaddr_in *ipv4 = (struct sockaddr_in *)addr;
+    int af = 0; 
+    struct sockaddr_in *ipv4 = NULL; 
+    struct sockaddr_in6 *ipv6 = NULL; 
+    if (addr->sa_family == AF_INET)
+    {
+        af = AF_INET; 
+        ipv4 = (struct sockaddr_in *)addr;
         inet_ntop(AF_INET, &(ipv4->sin_addr), ip, ipSize);
-        *port = ntohs(ipv4->sin_port);
-    } else if (addr->ss_family == AF_INET6) {
-        struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)addr;
+    }else 
+    if (addr->sa_family == AF_INET6)
+    {
+        af = AF_INET6;
+        ipv6 = (struct sockaddr_in6 *)addr;
         inet_ntop(AF_INET6, &(ipv6->sin6_addr), ip, ipSize);
-        *port = ntohs(ipv6->sin6_port);
-    } else {
+    }
+    if(port != NULL)//Port wird nicht benötigt, deshalb setze den Port auch nicht
+    {
+        *port = (af == AF_INET) ? ntohs(ipv4->sin_port) : ntohs(ipv6->sin6_port);
+    }
+    if(addr->sa_family != AF_INET6 && addr->sa_family != AF_INET)
+    {
         printf("Unbekannte Adressfamilie.\n");
         *port = -1;  // Setzen Sie den Port auf einen ungültigen Wert, um anzuzeigen, dass die Adressfamilie unbekannt ist
     }
+}
+
+int getPort(int fd)
+{
+    int counter = 0;  
+    while(connectedClients[counter].socketFd != fd)
+        counter++;
+    return connectedClients[counter].port;
 }

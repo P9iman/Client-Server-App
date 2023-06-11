@@ -2,7 +2,7 @@
     "files.exclude": {
         "**/.*": true
     },
-    "editor.fontSize": 12,
+    "editor.fontSize": 14,
     "files.associations": {
         "utsname.h": "c",
         "stdlib.h": "c"
