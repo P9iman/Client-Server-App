@@ -4,12 +4,12 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <netdb.h>
-#include <sys/utsname.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
-#define MAX_HOSTNAME_SIZE 50
+//#include "clientServerUtil.h"
+
 #define MSG_BUFFER_SIZE 256
 #define INPUT_SIZE 200
 #define COMMAND_SIZE 7
@@ -21,17 +21,20 @@
 #define ERROR_LIST 4
 #define ERROR_QUIT 5
 
-void *get_in_addr(struct sockaddr *sa);
 int sendGetRequest(int socketFd, char* filename);
 int sendPutRequest(int socketFd, char* filename);
 int sendFilesRequest(int socketFd);
 int sendListRequest(int socketFd);
 int sendQuitRequest(int socketFd);
 
+int convertAddressToString(struct sockaddr*, char*, size_t, int*);
+int getClientIpAddress(int, char*,size_t);
+
 
 int main(int argc, char** argv)
 {
     char serverIP[INET6_ADDRSTRLEN];
+    char clientIP[INET6_ADDRSTRLEN];
     char *port = NULL; 
     char *serverAddr = NULL;
     char recvMsgBuffer[MSG_BUFFER_SIZE];
@@ -115,35 +118,15 @@ int main(int argc, char** argv)
         fprintf(stderr, "client: failed to connect\n");
         return 1;
     }
-  
-    // struct sockaddr_in clientIPAddr; 
-    // socklen_t clientIPAddrLen; 
-    // if (getpeername(socketFd, (struct sockaddr *)&clientIPAddr, &clientIPAddrLen) == -1)
-    // {
-    //     freeaddrinfo(clientInfo);
-    //     perror("Fehler beim Abrufen der Remote-Adresse");
-    //     return 1;
-    // }
 
-    struct sockaddr_storage clientIPAddr; 
-    socklen_t clientIPAddrLen = sizeof(clientIPAddr); 
-    if(getpeername(socketFd, (struct sockaddr *)&clientIPAddr,clientIPAddrLen) == -1)
+    if(getClientIpAddress(socketFd,clientIP, sizeof(clientIP)) != 0)
     {
+        printf("Error in getClientIpAddress!\n");
         freeaddrinfo(clientInfo);
-        perror("Fehler beim Abrufen der Remote-Adresse");
-        return 1;        
-    }
-    char clientIP[INET_ADDRSTRLEN];
-    if (inet_ntop(AF_INET, &(clientIPAddr.sin_addr), clientIP, INET_ADDRSTRLEN) == NULL)
-    {
-        freeaddrinfo(clientInfo);
-        perror("Fehler beim Konvertieren der IP-Adresse");
-        return 1;
+        return EXIT_FAILURE;
     }
     printf("Client IP-address: %s\n", clientIP);
-
-
-    inet_ntop(p->ai_family, get_in_addr((struct sockaddr*) p->ai_addr),serverIP, sizeof(serverIP));
+    convertAddressToString(p->ai_addr, serverIP, sizeof(serverIP),NULL);
     printf("Client connecting to %s\n", serverIP);
     //Die Liste mit Adresse wird nicht mehr benötigt
     freeaddrinfo(clientInfo);
@@ -227,8 +210,6 @@ int main(int argc, char** argv)
                 break;
               case ERROR_GET : printf("Get-Request konnte nicht geschickt werden!\n");
                   break;
-              default: printf("Unknown Error\n");
-                break;
           }
           continue;
       }
@@ -313,16 +294,45 @@ int sendQuitRequest(int socketFd)
     }
 }
 
-/**
- * @brief Diese Hilfsfunktion liefert die Socketadresse sowohl für IPv4 als auch für IPv6
-*/
-void *get_in_addr(struct sockaddr *sa)
+int convertAddressToString(struct sockaddr *addr, char *ip, size_t ipSize, int *port)
 {
-    if(sa->sa_family == AF_INET)
+    int returnValue = EXIT_SUCCESS;
+    int af = 0;
+    struct sockaddr_in *ipv4 = NULL;
+    struct sockaddr_in6 *ipv6 = NULL;
+    if (addr->sa_family == AF_INET)
     {
-        return &(((struct sockaddr_in*)sa)->sin_addr);
+        af = AF_INET;
+        ipv4 = (struct sockaddr_in *)addr;
+        inet_ntop(AF_INET, &(ipv4->sin_addr), ip, ipSize);
     }else
+    if (addr->sa_family == AF_INET6)
     {
-        return &(((struct sockaddr_in6*)sa)->sin6_addr);
+        af = AF_INET6;
+        ipv6 = (struct sockaddr_in6 *)addr;
+        inet_ntop(AF_INET6, &(ipv6->sin6_addr), ip, ipSize);
     }
+    if(port != NULL)//Port wird nicht benötigt, deshalb setze den Port auch nicht
+    {
+        *port = (af == AF_INET) ? ntohs(ipv4->sin_port) : ntohs(ipv6->sin6_port);
+    }
+    if(addr->sa_family != AF_INET6 && addr->sa_family != AF_INET)
+    {
+        printf("Unbekannte Adressfamilie.\n");
+        *port = -1;  // Setzen Sie den Port auf einen ungültigen Wert, um anzuzeigen, dass die Adressfamilie unbekannt ist
+        returnValue = EXIT_FAILURE;
+    }
+    return returnValue;
+}
+
+int getClientIpAddress(int socketFd, char *ip, size_t ipSize)
+{
+    struct sockaddr_storage clientIPAddr;
+    socklen_t clientIPAddrLen = sizeof(clientIPAddr);
+    if(getpeername(socketFd, (struct sockaddr *)&clientIPAddr, &clientIPAddrLen) == -1)
+    {
+        perror("getpeername in getClientIpAddress()");
+        return EXIT_FAILURE;
+    }
+    return convertAddressToString((struct sockaddr*)&clientIPAddr, ip, ipSize, NULL);
 }

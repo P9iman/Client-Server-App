@@ -1,6 +1,6 @@
-/mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/CMakeFiles/edit_cache.dir
-/mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/CMakeFiles/rebuild_cache.dir
-/mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src/CMakeFiles/client.dir
-/mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src/CMakeFiles/server.dir
-/mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src/CMakeFiles/edit_cache.dir
-/mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src/CMakeFiles/rebuild_cache.dir
+/home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src/CMakeFiles/client.dir
+/home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src/CMakeFiles/server.dir
+/home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src/CMakeFiles/edit_cache.dir
+/home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug/src/CMakeFiles/rebuild_cache.dir

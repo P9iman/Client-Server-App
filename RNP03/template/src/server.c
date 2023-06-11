@@ -3,7 +3,6 @@
 #include <string.h>
 #include <time.h>
 #include <stdlib.h>
-#include <stdbool.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -29,7 +28,6 @@ void handleList(int socketFd);
 void handleFiles(int socketFd);
 void handleGet(char *arg, int socketFd);
 void handlePut(char *arg, int socketFd, int dataLength);
-void *get_in_addr(struct sockaddr *sa);
 void setnonblocking(int socket);
 void convertAddressToString(struct sockaddr *addr, char *ip, size_t ipSize, int *port);
 int getPort(int fd);
@@ -99,7 +97,7 @@ void build_select_list()
     }
 }
 
-void handle_new_connection()
+void handleNewConnection()
 {
     /*Handle hier die neue connection*/
     int newConnection;
@@ -108,7 +106,7 @@ void handle_new_connection()
     newConnection = accept(sfd_listener, (struct sockaddr *)&sa_client, &sa_len);
     if(newConnection < 0)
     {
-        perror("accept in handle_new_connection()");
+        perror("accept in handleNewConnection()");
         exit(EXIT_FAILURE);
     }
     if(numConnectedClients == MAX_CLIENTS)
@@ -120,7 +118,7 @@ void handle_new_connection()
     }
     if(sendRetVal == -1){
         close(newConnection); 
-        perror("send in handle_new_connection()"); 
+        perror("send in handleNewConnection()");
         exit(EXIT_FAILURE);  
     }
     setnonblocking(newConnection);
@@ -131,7 +129,7 @@ void handle_new_connection()
     // Rufen Sie die Adresse des Remote-Endpunkts ab
     if (getpeername(newConnection, (struct sockaddr *)&sa_client, &sa_len) == -1)
     {
-        perror("getpeername in handle_new_connection()");
+        perror("getpeername in handleNewConnection()");
         exit(EXIT_FAILURE); 
     }
     // Speichern die Client-Daten in der Datenstruktur
@@ -150,7 +148,7 @@ void handle_new_connection()
     }
 }
 
-void deal_with_data(int socketFd)
+void dealWithData(int socketFd)
 {
     if ((recvRetVal = recv(socketFd, msgBuffer, sizeof(msgBuffer), 0)) > 0)
     {
@@ -196,7 +194,7 @@ void deal_with_data(int socketFd)
     }else
     {
         //Fehler beim Empfangen der Nachricht
-        perror("recv in deal_with_data");
+        perror("recv in dealWithData");
         close(socketFd);
         exit(EXIT_FAILURE);
     }
@@ -207,7 +205,7 @@ void read_sockets()
 {
     if(FD_ISSET(sfd_listener, &read_fdset))
     {
-        handle_new_connection();
+        handleNewConnection();
     }
     /* for (all entries in queue) */
     for(int i = 0; i < MAX_CLIENTS; i++)
@@ -215,7 +213,9 @@ void read_sockets()
         //connectedClients[i].connected != false  && 
         if((connectedClients[i].socketFd != 0) && FD_ISSET(connectedClients[i].socketFd, &read_fdset))
         {
-            deal_with_data(connectedClients[i].socketFd); 
+            /*Debug Code*/
+            printf("Current Client SocketFD: %d\n", connectedClients[i].socketFd);
+            dealWithData(connectedClients[i].socketFd);
         }
     }
 }
@@ -515,9 +515,8 @@ void handlePut(char *arg, int socketFd, int dataLength)
 void handleList(int socketFd)
 {
     //char msgBuffer[BUFFER_SIZE];
-    
     int counterConnectedClients = 0; 
-    for(int i = 0; i <= MAX_CLIENTS; i++)
+    for(int i = 0; i < MAX_CLIENTS; i++)
     {
         if(connectedClients[i].socketFd != 0)
         {
@@ -619,7 +618,7 @@ void convertAddressToString(struct sockaddr *addr, char *ip, size_t ipSize, int 
     if(addr->sa_family != AF_INET6 && addr->sa_family != AF_INET)
     {
         printf("Unbekannte Adressfamilie.\n");
-        *port = -1;  // Setzen Sie den Port auf einen ungültigen Wert, um anzuzeigen, dass die Adressfamilie unbekannt ist
+        *port = -1;  // Setzen den Port auf einen ungültigen Wert, um anzuzeigen, dass die Adressfamilie unbekannt ist
     }
 }
 

@@ -74,8 +74,8 @@
 	"kind" : "codemodel",
 	"paths" : 
 	{
-		"build" : "/mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug",
-		"source" : "/mnt/c/Users/merku/git/Rechnernetze-Praktikum/RNP03/template"
+		"build" : "/home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template/cmake-build-debug",
+		"source" : "/home/paiman/Documents/Studium/Rechnernetze-Praktikum/RNP03/template"
 	},
 	"version" : 
 	{
