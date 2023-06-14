@@ -19,10 +19,7 @@
 #define BUFFER_SIZE 256
 #define HOSTNAME_SIZE 50
 #define MAX_CLIENTS 10
-
 #define EOT '\x04'
-
-/*Prototypen*/
 
 void handleList(int socketFd);
 void handleFiles(int socketFd);
@@ -30,33 +27,21 @@ void handleGet(char *arg, int socketFd);
 void handlePut(char *arg, int socketFd, int dataLength);
 void setnonblocking(int socket);
 void convertAddressToString(struct sockaddr *addr, char *ip, size_t ipSize, int *port);
-int getPort(int fd);
+int getPortFromConnectedClient(int fd);
+void *get_in_addr(struct sockaddr *sa); 
+int get_in_port(struct sockaddr *addr); 
 
-struct utsname serverHostname;
+char serverHostname[HOSTNAME_SIZE];  
 int sfd_listener; /*sfd_listener = Socket-File-Diskreptor für listening*/
-int readSockets = 0; /*Hier drinn steht der RetVal von select, also die Anzahl an readable Sockets*/
-
 fd_set read_fdset; /*in diesem Set mit File-Discreptoren sind die fds für die Sockets aus denen gelesen werden soll*/ 
 fd_set copy_read_fdset; 
-
 int maxFd; /*der größte FD, wird für select benötigt*/
-//sockaddr_storage besser als sockaddr_in, da es Platz für IPv4 als auch IPv6 struct hat
-struct sockaddr_storage sa_client;
-socklen_t sa_len = sizeof(struct sockaddr_storage);
-//Die IPv4 oder IPv6 Adresse vom client
-char clientIPAddress[INET6_ADDRSTRLEN];
-//Die IP-Adresse vom server
-char serverIPAddress[INET6_ADDRSTRLEN];
-//Der Port von dem Server über dem Nachrichten ausgetauscht werden
-char* serverPort;
-//Buffer für die Nachricht des Clienten
-char msgBuffer[BUFFER_SIZE];
-//Return Value vom recv
-ssize_t recvRetVal;
+char clientIPAddress[INET6_ADDRSTRLEN]; /*Die IPv4 oder IPv6 Adresse vom client*/
+char msgBuffer[BUFFER_SIZE]; /*Buffer für die Nachricht des Clienten*/
 
 /*Struct um beim List Request einfach die Clienten zurückzugeben*/
 typedef struct{
-    char hostname[INET6_ADDRSTRLEN];
+    char hostname[HOSTNAME_SIZE];
     int port;
     int socketFd; //wenn kein client in dem arrayslot verbunden ist, ist socketFd = -1 
 }ClientInfo;
@@ -99,7 +84,9 @@ void build_select_list()
 
 void handleNewConnection()
 {
-    /*Handle hier die neue connection*/
+    //sockaddr_storage besser als sockaddr_in, da es Platz für IPv4 als auch IPv6 struct hat
+    struct sockaddr_storage sa_client;
+    socklen_t sa_len = sizeof(struct sockaddr_storage);
     int newConnection;
     int clientPort;
     int sendRetVal = 0; 
@@ -150,6 +137,8 @@ void handleNewConnection()
 
 void dealWithData(int socketFd)
 {
+    //Return Value vom recv
+    ssize_t recvRetVal;
     if ((recvRetVal = recv(socketFd, msgBuffer, sizeof(msgBuffer), 0)) > 0)
     {
         //TODO Auf EOT Zeichen achten
@@ -176,7 +165,7 @@ void dealWithData(int socketFd)
         /*Wir haben als Return Value von recv() 0 erhalten, das bedeutet ein Client hat die Verbindung zum Server geschlossen*/
         //printf("Client am Socket %d hat Verbindung abgebrochen\n", socketFd);
         // printf("Schließe Socket %d\n", socketFd);
-        int port = getPort(socketFd); 
+        int port = getPortFromConnectedClient(socketFd); 
         printf("Client on Port %d disconnected\nClosing Port %d\n",port,port); 
         close(socketFd);
         FD_CLR(socketFd, &read_fdset); //Lösche den fd aus dem Set
@@ -200,7 +189,6 @@ void dealWithData(int socketFd)
     }
 }
 
-
 void read_sockets()
 {
     if(FD_ISSET(sfd_listener, &read_fdset))
@@ -223,15 +211,27 @@ void read_sockets()
 
 int main(int argc, char** argv)
 {
-	memset(msgBuffer, 0, BUFFER_SIZE);
     int yes = 1; // for setsockopt() SO_REUSEADDR, below
+    int readSockets = 0; /*Hier drinn steht der RetVal von select, also die Anzahl an readable Sockets*/
+    char serverIPAddress[INET6_ADDRSTRLEN];
+    char* serverPort; /*Über diesen Port hört der Server auf neue Verbindungsanfragen*/
+    int getnameinfoRetVal = 0; 
+    int getsocknameRetVal = 0; 
+    struct sockaddr_storage serverSockAddr = {0}; 
+    socklen_t serverSockAddrLen = sizeof(serverSockAddr); 
+	memset(msgBuffer, 0, BUFFER_SIZE);
 
-	//Speicher den Serverhostname in serverHostname ab. 
-	if(uname(&serverHostname) == -1) 
-	{
-        perror("uname in main()");
-        return 1;    
-    }
+	/*Konfiguriere Socket für getaddrinfo() Funktion*/
+    int getddrinfoRetVal;
+	struct addrinfo *p;			  //Index vom aktuelle Node der verketten Liste
+	struct addrinfo hints; 		  //in diesem Struct steht wie der Socket konfiguriert werden soll
+  	struct addrinfo *serverInfo;  //Pointer auf eine Verkettet Liste nach dem getaddrinfo() Aufruf
+  	memset(&hints, 0, sizeof hints); 
+  	hints.ai_family = AF_UNSPEC; //Adress-Family ist unspezifiziert somit IPv4 und IPv6 möglich
+	hints.ai_socktype = SOCK_STREAM; 
+	hints.ai_flags = AI_PASSIVE; //befüllt die IP Adresse fuer mich
+    hints.ai_protocol = IPPROTO_TCP; 
+
 	if(argc > 2)
 	{
 		printf("Starting server failed!\nUsage: ./server [Port]\n"); 
@@ -244,17 +244,6 @@ int main(int argc, char** argv)
 	{
 		serverPort = DEFAULT_PORT; 
 	}
-	
-	/*Konfiguriere Socket*/
-    int getddrinfoRetVal;
-	struct addrinfo *p;			  //Index vom aktuelle Node der verketten Liste
-	struct addrinfo hints; 		  //in diesem Struct steht wie der Socket konfiguriert werden soll
-  	struct addrinfo *serverInfo;  //Pointer auf eine Verkettet Liste nach dem getaddrinfo() Aufruf
-  	memset(&hints, 0, sizeof hints); 
-  	hints.ai_family = AF_UNSPEC; //Adress-Family ist unspezifiziert somit IPv4 und IPv6 möglich
-	hints.ai_socktype = SOCK_STREAM; 
-	hints.ai_flags = AI_PASSIVE; //befüllt die IP Adresse fuer mich
-	hints.ai_protocol = IPPROTO_TCP; 
 
 	/**
 	 * Als hostname wird hier NULL übergeben, abhängig von den ai_flags
@@ -265,12 +254,7 @@ int main(int argc, char** argv)
 		fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(getddrinfoRetVal));
 		return 1; 
 	}
-    //Printe die IP Adresse vom Server
-    // inet_ntop(serverInfo->ai_family, get_in_addr(serverInfo->ai_addr), serverIPAddress, INET6_ADDRSTRLEN);
-
-    convertAddressToString(serverInfo->ai_addr, serverIPAddress, sizeof(clientIPAddress), NULL); 
-    printf("Server IP Adresse: %s\nServer listening on Port: %s\n\n", serverIPAddress, serverPort);
-
+    
     for(p = serverInfo; p != NULL; p = p->ai_next)
 	{
         //TODO Hier Änderung vorgenommen letzte Argument von Socket
@@ -284,6 +268,21 @@ int main(int argc, char** argv)
         setnonblocking(sfd_listener);
 		if(bind(sfd_listener, (struct sockaddr*)p->ai_addr, p->ai_addrlen) == 0)
 		{
+            //Rufe die IP Adresse und den Port  vom Server ab 
+            getsocknameRetVal = getsockname(sfd_listener, (struct sockaddr*)&serverSockAddr, &serverSockAddrLen); 
+            
+            //Rufe den Serhostname mit getnameinfo ab
+            getnameinfoRetVal = getnameinfo(serverInfo->ai_addr, serverInfo->ai_addrlen, serverHostname, HOSTNAME_SIZE, NULL, 0, 0); 
+        
+            // Überprüft einfachen die Rückgabewerte und gibt Fehler aus wenn != 0 true ist
+            (getnameinfoRetVal != 0 || getsocknameRetVal != 0) ? (getnameinfoRetVal != 0) ? (fprintf(stderr, "error in getnameinfo: %s\n", gai_strerror(getnameinfoRetVal)), exit(EXIT_FAILURE))
+            : (perror("error in getsockname")), exit(EXIT_FAILURE) : (void)0;
+
+            if(*serverHostname != '\0'){
+                printf("Serverhostname: %s\n", serverHostname); 
+                inet_ntop(serverSockAddr.ss_family,get_in_addr((struct sockaddr*)&serverSockAddr),serverIPAddress, INET6_ADDRSTRLEN);
+                printf("Server local IP Adresse: %s\nServer listening on Port: %d\n\n", serverIPAddress, get_in_port((struct sockaddr*)&serverSockAddr));
+            }
             //Der fd sfd_listener konnte erfolgreich mit der Socketadresse gebunden werden
 			break;
 		}else
@@ -292,7 +291,6 @@ int main(int argc, char** argv)
         }
 	}
     freeaddrinfo(serverInfo); /*Die Liste mit Adresse wird nicht mehr benötigt*/
-
 	if(p == NULL) //Keine Adresse konnte verwendet werden
 	{
 		fprintf(stderr, "selectserver: failed to bind\n");
@@ -311,7 +309,6 @@ int main(int argc, char** argv)
 		}
 		return EXIT_FAILURE;
 	}
-    
     printf("Waiting for TCP connections ... \n");
     maxFd = sfd_listener; /*der letzte fd ist der größte somit sfd_listener*/
 
@@ -500,7 +497,8 @@ void handlePut(char *arg, int socketFd, int dataLength)
 	char timerString[80]; 
 	strftime(timerString, sizeof(timerString), "%d-%m-%Y %H:%M:%S", timeinfo); 
 
-	snprintf(response, sizeof(response), "OK %s, Server IP: %s, Date: %s %s", serverHostname.machine, serverIP, __DATE__, timerString);
+    //TODO 
+	snprintf(response, sizeof(response), "OK %s, Server IP: %s, Date: %s %s", serverHostname, serverIP, __DATE__, timerString);
 	send(socketFd, response, sizeof(response), 0);
 }
 
@@ -596,9 +594,9 @@ void handleFiles(int socketFd)
 
 void convertAddressToString(struct sockaddr *addr, char *ip, size_t ipSize, int *port) 
 {
-    int af = 0; 
-    struct sockaddr_in *ipv4 = NULL; 
-    struct sockaddr_in6 *ipv6 = NULL; 
+        int af = 0; 
+        struct sockaddr_in *ipv4 = NULL; 
+        struct sockaddr_in6 *ipv6 = NULL; 
     if (addr->sa_family == AF_INET)
     {
         af = AF_INET; 
@@ -622,7 +620,76 @@ void convertAddressToString(struct sockaddr *addr, char *ip, size_t ipSize, int 
     }
 }
 
-int getPort(int fd)
+void getHostname(struct sockaddr *addr, char *hostname, int hostnameLen) 
+{
+    int getnameinfoRetVal; 
+    int af = 0; 
+    struct sockaddr_in *ipv4 = NULL; 
+    struct sockaddr_in6 *ipv6 = NULL; 
+     
+    socklen_t addrLen = (addr->sa_family == AF_INET) ?  INET_ADDRSTRLEN : INET6_ADDRSTRLEN; 
+
+    getnameinfoRetVal = getnameinfo(addr, addrLen, hostname, hostnameLen, NULL, 0, 0); 
+    (getsocknameRetVal != 0) ? fprintf(stderr, "error in getnameinfo: %s\n", gai_strerror(getnameinfoRetVal)), exit(EXIT_FAILURE) 
+    : (void)0;
+}
+
+
+
+void *get_in_addr(struct sockaddr *sa)
+{
+	if(sa->sa_family == AF_INET)
+	{
+		return &(((struct sockaddr_in*)sa)->sin_addr);
+	}else
+	{
+		return &(((struct sockaddr_in6*)sa)->sin6_addr); 
+	}
+}
+
+int get_in_port_and_address_NEW(int socketFd, char *ip)
+{
+    struct sockaddr_in *ipv4 = NULL; 
+    struct sockaddr_in6 *ipv6 = NULL; 
+    int getsocknameRetVal; 
+    struct sockaddr_storage serverSockAddr; 
+    socklen_t serverSockAddrLen; 
+
+    //Rufe die IP Adresse und den Port  vom Server ab 
+    getsocknameRetVal = getsockname(sfd_listener, (struct sockaddr*)&serverSockAddr, &serverSockAddrLen); 
+    (getsocknameRetVal != 0) ? perror("error in getsockname"), exit(EXIT_FAILURE) : (void)0;
+
+    struct sockaddr *genericAddr = (struct sockaddr *)&serverSockAddr; 
+    if(genericAddr->sa_family == AF_INET6){
+        ipv6 = (struct sockaddr_in6 *)genericAddr;
+        return ntohs(ipv6->sin6_port);
+    }
+    if(genericAddr->sa_family == AF_INET){
+        ipv4 = (struct sockaddr_in *)genericAddr;
+        return ntohs(ipv4->sin_port); 
+    }
+    return -1; 
+
+}
+
+
+int get_in_port(struct sockaddr *addr)
+{
+    struct sockaddr_in *ipv4 = NULL; 
+    struct sockaddr_in6 *ipv6 = NULL; 
+    if(addr->sa_family == AF_INET6){
+        ipv6 = (struct sockaddr_in6 *)addr;
+        return ntohs(ipv6->sin6_port);
+    }
+    if(addr->sa_family == AF_INET){
+        ipv4 = (struct sockaddr_in *)addr;
+        return ntohs(ipv4->sin_port); 
+    }
+    return -1; 
+}
+
+
+int getPortFromConnectedClient(int fd)
 {
     int counter = 0;  
     while(connectedClients[counter].socketFd != fd)

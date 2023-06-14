@@ -58,7 +58,7 @@ int main(int argc, char** argv)
     /*Parse Server-Kontakt: also DNS-Name oder IPv4/IPv6 Adresse sowie Port des Servers*/
     if(argc != 3) //argc muss 3 sein da der Programmname immer das erste Argument ist, dann kommen DNS-Name/IPv4/6 (1. Argument) und Port (2. Argument)
     {
-        printf("Connecting failed!\nUsage: ./server [DNS-Name or IPv4/IPv6 Address] [Port]\n"); 
+        printf("Connecting failed!\nUsage: ./client [DNS-Name or IPv4/IPv6 Address] [Port]\n"); 
         return 1; 
     }else
     {
@@ -79,7 +79,7 @@ int main(int argc, char** argv)
     */
     for(p = clientInfo; p != NULL; p = p->ai_next)
     {
-        socketFd = socket(clientInfo->ai_family, clientInfo->ai_socktype, clientInfo->ai_protocol);
+        socketFd = socket(clientInfo->ai_family, clientInfo->ai_socktype, 0);
         if(socketFd < 0)
         {
             continue;
