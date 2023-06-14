@@ -26,17 +26,18 @@ void handleFiles(int socketFd);
 void handleGet(char *arg, int socketFd);
 void handlePut(char *arg, int socketFd, int dataLength);
 void setnonblocking(int socket);
-void convertAddressToString(struct sockaddr *addr, char *ip, size_t ipSize, int *port);
 int getPortFromConnectedClient(int fd);
-void *get_in_addr(struct sockaddr *sa); 
-int get_in_port(struct sockaddr *addr); 
+void getHostname(struct sockaddr *addr, char *hostname, int hostnameLen); 
+void get_port_and_ip_server(int sockertFd, char *ipAddress, int *port); 
+void get_port_and_ip_client(int socketFd, char *ipAddress, int *port); 
+void get_port_and_ip_helper(struct sockaddr_storage addr ,char *ipAddress, int *port); 
+
 
 char serverHostname[HOSTNAME_SIZE];  
 int sfd_listener; /*sfd_listener = Socket-File-Diskreptor für listening*/
 fd_set read_fdset; /*in diesem Set mit File-Discreptoren sind die fds für die Sockets aus denen gelesen werden soll*/ 
 fd_set copy_read_fdset; 
 int maxFd; /*der größte FD, wird für select benötigt*/
-char clientIPAddress[INET6_ADDRSTRLEN]; /*Die IPv4 oder IPv6 Adresse vom client*/
 char msgBuffer[BUFFER_SIZE]; /*Buffer für die Nachricht des Clienten*/
 
 /*Struct um beim List Request einfach die Clienten zurückzugeben*/
@@ -84,12 +85,13 @@ void build_select_list()
 
 void handleNewConnection()
 {
-    //sockaddr_storage besser als sockaddr_in, da es Platz für IPv4 als auch IPv6 struct hat
     struct sockaddr_storage sa_client;
     socklen_t sa_len = sizeof(struct sockaddr_storage);
     int newConnection;
-    int clientPort;
     int sendRetVal = 0; 
+    int clientPort; 
+    char clientIPAddress[INET6_ADDRSTRLEN]; /*Die IPv4 oder IPv6 Adresse vom client*/
+    char clientHostname[HOSTNAME_SIZE]; 
     newConnection = accept(sfd_listener, (struct sockaddr *)&sa_client, &sa_len);
     if(newConnection < 0)
     {
@@ -109,19 +111,15 @@ void handleNewConnection()
         exit(EXIT_FAILURE);  
     }
     setnonblocking(newConnection);
-    convertAddressToString((struct sockaddr *)&sa_client,clientIPAddress, sizeof(clientIPAddress),&clientPort); 
+
+    get_port_and_ip_client(newConnection, clientIPAddress, &clientPort); 
     printf("Client with address %s has connected on port %d\n", clientIPAddress, clientPort);
-    
-    /*Fuege die neue connection bzw. Client in das connectedClients Array */
-    // Rufen Sie die Adresse des Remote-Endpunkts ab
-    if (getpeername(newConnection, (struct sockaddr *)&sa_client, &sa_len) == -1)
-    {
-        perror("getpeername in handleNewConnection()");
-        exit(EXIT_FAILURE); 
-    }
+    //rufe den hostname vom client ab
+    getHostname((struct sockaddr*)&sa_client, clientHostname, HOSTNAME_SIZE); 
+
     // Speichern die Client-Daten in der Datenstruktur
     ClientInfo clientInfo;
-    snprintf(clientInfo.hostname, INET6_ADDRSTRLEN, "%s", clientIPAddress);
+    snprintf(clientInfo.hostname, INET6_ADDRSTRLEN, "%s", clientHostname);
     clientInfo.port = clientPort;  
     clientInfo.socketFd = newConnection; 
     //suche einen freien Platz in der Liste von connected clients und speichere die neue Verbindung
@@ -163,17 +161,14 @@ void dealWithData(int socketFd)
     if(recvRetVal == 0)
     {
         /*Wir haben als Return Value von recv() 0 erhalten, das bedeutet ein Client hat die Verbindung zum Server geschlossen*/
-        //printf("Client am Socket %d hat Verbindung abgebrochen\n", socketFd);
-        // printf("Schließe Socket %d\n", socketFd);
         int port = getPortFromConnectedClient(socketFd); 
-        printf("Client on Port %d disconnected\nClosing Port %d\n",port,port); 
+        printf("Client on Port %d has disconnected\nClosing Port %d\n",port,port); 
         close(socketFd);
         FD_CLR(socketFd, &read_fdset); //Lösche den fd aus dem Set
         //Entferne (bzw. Markiere) den client als disconnected damit ein Platz im Array frei wird
         for(int i = 0; i < MAX_CLIENTS; i++){
             if(connectedClients[i].socketFd == socketFd)
             {
-                // connectedClients[i].hostname[INET6_ADDRSTRLEN-1] = "\0"; 
                 memset(connectedClients[i].hostname, 0, INET6_ADDRSTRLEN);
                 connectedClients[i].socketFd = 0; 
                 connectedClients[i].port = 0;  
@@ -195,14 +190,10 @@ void read_sockets()
     {
         handleNewConnection();
     }
-    /* for (all entries in queue) */
     for(int i = 0; i < MAX_CLIENTS; i++)
-    {
-        //connectedClients[i].connected != false  && 
+    { 
         if((connectedClients[i].socketFd != 0) && FD_ISSET(connectedClients[i].socketFd, &read_fdset))
         {
-            /*Debug Code*/
-            printf("Current Client SocketFD: %d\n", connectedClients[i].socketFd);
             dealWithData(connectedClients[i].socketFd);
         }
     }
@@ -214,13 +205,8 @@ int main(int argc, char** argv)
     int yes = 1; // for setsockopt() SO_REUSEADDR, below
     int readSockets = 0; /*Hier drinn steht der RetVal von select, also die Anzahl an readable Sockets*/
     char serverIPAddress[INET6_ADDRSTRLEN];
-    char* serverPort; /*Über diesen Port hört der Server auf neue Verbindungsanfragen*/
-    int getnameinfoRetVal = 0; 
-    int getsocknameRetVal = 0; 
-    struct sockaddr_storage serverSockAddr = {0}; 
-    socklen_t serverSockAddrLen = sizeof(serverSockAddr); 
+    char* serverPort; /*Über diesen Port hört der Server auf neue Verbindungsanfragen*/  
 	memset(msgBuffer, 0, BUFFER_SIZE);
-
 	/*Konfiguriere Socket für getaddrinfo() Funktion*/
     int getddrinfoRetVal;
 	struct addrinfo *p;			  //Index vom aktuelle Node der verketten Liste
@@ -257,7 +243,6 @@ int main(int argc, char** argv)
     
     for(p = serverInfo; p != NULL; p = p->ai_next)
 	{
-        //TODO Hier Änderung vorgenommen letzte Argument von Socket
 		sfd_listener = socket(p->ai_family, p->ai_socktype, 0);
 		if(sfd_listener < 0)
 		{
@@ -267,22 +252,9 @@ int main(int argc, char** argv)
         setsockopt(sfd_listener, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
         setnonblocking(sfd_listener);
 		if(bind(sfd_listener, (struct sockaddr*)p->ai_addr, p->ai_addrlen) == 0)
-		{
-            //Rufe die IP Adresse und den Port  vom Server ab 
-            getsocknameRetVal = getsockname(sfd_listener, (struct sockaddr*)&serverSockAddr, &serverSockAddrLen); 
-            
+		{            
             //Rufe den Serhostname mit getnameinfo ab
-            getnameinfoRetVal = getnameinfo(serverInfo->ai_addr, serverInfo->ai_addrlen, serverHostname, HOSTNAME_SIZE, NULL, 0, 0); 
-        
-            // Überprüft einfachen die Rückgabewerte und gibt Fehler aus wenn != 0 true ist
-            (getnameinfoRetVal != 0 || getsocknameRetVal != 0) ? (getnameinfoRetVal != 0) ? (fprintf(stderr, "error in getnameinfo: %s\n", gai_strerror(getnameinfoRetVal)), exit(EXIT_FAILURE))
-            : (perror("error in getsockname")), exit(EXIT_FAILURE) : (void)0;
-
-            if(*serverHostname != '\0'){
-                printf("Serverhostname: %s\n", serverHostname); 
-                inet_ntop(serverSockAddr.ss_family,get_in_addr((struct sockaddr*)&serverSockAddr),serverIPAddress, INET6_ADDRSTRLEN);
-                printf("Server local IP Adresse: %s\nServer listening on Port: %d\n\n", serverIPAddress, get_in_port((struct sockaddr*)&serverSockAddr));
-            }
+            getHostname(serverInfo->ai_addr, serverHostname, HOSTNAME_SIZE); 
             //Der fd sfd_listener konnte erfolgreich mit der Socketadresse gebunden werden
 			break;
 		}else
@@ -296,10 +268,6 @@ int main(int argc, char** argv)
 		fprintf(stderr, "selectserver: failed to bind\n");
 		return EXIT_FAILURE;
 	}
-	/**
-	 * Eingehende Verbindungen werden in einer Queue eingefügt bis diese mit accept() akzeptiert werden. 
-	 * Mit dem Argument 5, wird die Queuegröße für die eingehenden Verbindungen festgelegt 
-	*/ 
 	if(listen(sfd_listener, 5) < 0) 
 	{
 		perror("listen");
@@ -309,6 +277,11 @@ int main(int argc, char** argv)
 		}
 		return EXIT_FAILURE;
 	}
+
+    int port; 
+    get_port_and_ip_server(sfd_listener, serverIPAddress, &port); 
+    printf("Serverhostname: %s\n", serverHostname); 
+    printf("Server local IP Adresse: %s\nServer listening on Port: %d\n\n", serverIPAddress, port);
     printf("Waiting for TCP connections ... \n");
     maxFd = sfd_listener; /*der letzte fd ist der größte somit sfd_listener*/
 
@@ -318,21 +291,7 @@ int main(int argc, char** argv)
      */
     while (1)
 	{
-
-        //jedes mal nach select muss das fdset neu initialisiert werden
-        FD_ZERO(&read_fdset); 
-        //auch der listener Fd-Socket muss immer wieder eingefügt werden da er nach select nicht gesetzt ist
-        FD_SET(sfd_listener, &read_fdset);
-
-        for(int i = 0; i < MAX_CLIENTS; i++)
-        {
-            if(connectedClients[i].socketFd > 0){
-                FD_SET(connectedClients[i].socketFd, &read_fdset); 
-            }
-            if(connectedClients[i].socketFd > maxFd){
-                maxFd = connectedClients[i].socketFd; 
-            }
-        }
+        build_select_list(); 
 
         readSockets = select(FD_SETSIZE, &read_fdset, NULL, NULL, NULL);
         if(readSockets == -1)
@@ -592,102 +551,68 @@ void handleFiles(int socketFd)
     }
 }
 
-void convertAddressToString(struct sockaddr *addr, char *ip, size_t ipSize, int *port) 
-{
-        int af = 0; 
-        struct sockaddr_in *ipv4 = NULL; 
-        struct sockaddr_in6 *ipv6 = NULL; 
-    if (addr->sa_family == AF_INET)
-    {
-        af = AF_INET; 
-        ipv4 = (struct sockaddr_in *)addr;
-        inet_ntop(AF_INET, &(ipv4->sin_addr), ip, ipSize);
-    }else 
-    if (addr->sa_family == AF_INET6)
-    {
-        af = AF_INET6;
-        ipv6 = (struct sockaddr_in6 *)addr;
-        inet_ntop(AF_INET6, &(ipv6->sin6_addr), ip, ipSize);
-    }
-    if(port != NULL)//Port wird nicht benötigt, deshalb setze den Port auch nicht
-    {
-        *port = (af == AF_INET) ? ntohs(ipv4->sin_port) : ntohs(ipv6->sin6_port);
-    }
-    if(addr->sa_family != AF_INET6 && addr->sa_family != AF_INET)
-    {
-        printf("Unbekannte Adressfamilie.\n");
-        *port = -1;  // Setzen den Port auf einen ungültigen Wert, um anzuzeigen, dass die Adressfamilie unbekannt ist
-    }
-}
-
+/**
+ * @brief Diese Hilfsfunktion dient dazu den Hostnamen abzurufen und in den Buffer char* hostname abzuspeichern.
+*/
 void getHostname(struct sockaddr *addr, char *hostname, int hostnameLen) 
 {
     int getnameinfoRetVal; 
-    int af = 0; 
-    struct sockaddr_in *ipv4 = NULL; 
-    struct sockaddr_in6 *ipv6 = NULL; 
-     
     socklen_t addrLen = (addr->sa_family == AF_INET) ?  INET_ADDRSTRLEN : INET6_ADDRSTRLEN; 
 
     getnameinfoRetVal = getnameinfo(addr, addrLen, hostname, hostnameLen, NULL, 0, 0); 
-    (getsocknameRetVal != 0) ? fprintf(stderr, "error in getnameinfo: %s\n", gai_strerror(getnameinfoRetVal)), exit(EXIT_FAILURE) 
+    (getnameinfoRetVal != 0) ? fprintf(stderr, "error in getnameinfo: %s\n", gai_strerror(getnameinfoRetVal)), exit(EXIT_FAILURE) 
     : (void)0;
+    if(*serverHostname == '\0')
+    {
+        printf("Hostname couldnt be determined\nSetting numeric form\n"); 
+    }
 }
 
-
-
-void *get_in_addr(struct sockaddr *sa)
+void get_port_and_ip_client(int socketFd, char *ipAddress, int *port)
 {
-	if(sa->sa_family == AF_INET)
-	{
-		return &(((struct sockaddr_in*)sa)->sin_addr);
-	}else
-	{
-		return &(((struct sockaddr_in6*)sa)->sin6_addr); 
-	}
+    struct sockaddr_storage addr; 
+    socklen_t len = sizeof(addr); 
+    //einzige Unterschied zwischen get_port_and_ip_client und get_port_and_ip_server ist das get_port_and_ip_client getpeername benutzt
+    if(getpeername(socketFd, (struct sockaddr*)&addr, &len) == -1)
+    {
+        perror("getpeername in get_port_and_ip_client"); 
+        exit(EXIT_FAILURE); 
+    }    
+    get_port_and_ip_helper(addr, ipAddress, port); 
 }
 
-int get_in_port_and_address_NEW(int socketFd, char *ip)
+void get_port_and_ip_server(int socketFd, char *ipAddress, int *port)
 {
-    struct sockaddr_in *ipv4 = NULL; 
-    struct sockaddr_in6 *ipv6 = NULL; 
-    int getsocknameRetVal; 
-    struct sockaddr_storage serverSockAddr; 
-    socklen_t serverSockAddrLen; 
-
-    //Rufe die IP Adresse und den Port  vom Server ab 
-    getsocknameRetVal = getsockname(sfd_listener, (struct sockaddr*)&serverSockAddr, &serverSockAddrLen); 
-    (getsocknameRetVal != 0) ? perror("error in getsockname"), exit(EXIT_FAILURE) : (void)0;
-
-    struct sockaddr *genericAddr = (struct sockaddr *)&serverSockAddr; 
-    if(genericAddr->sa_family == AF_INET6){
-        ipv6 = (struct sockaddr_in6 *)genericAddr;
-        return ntohs(ipv6->sin6_port);
+    struct sockaddr_storage addr; 
+    socklen_t len = sizeof(addr); 
+    //einzige Unterschied zwischen get_port_and_ip_client und get_port_and_ip_server ist das get_port_and_ip_server getsockname benutzt
+    if (getsockname(socketFd, (struct sockaddr *)&addr, &len) == -1) 
+    {
+        perror("Fehler beim Abrufen der Socket-Adresse");
+        exit(EXIT_FAILURE); 
     }
-    if(genericAddr->sa_family == AF_INET){
-        ipv4 = (struct sockaddr_in *)genericAddr;
-        return ntohs(ipv4->sin_port); 
-    }
-    return -1; 
-
+    get_port_and_ip_helper(addr, ipAddress, port); 
 }
 
-
-int get_in_port(struct sockaddr *addr)
+void get_port_and_ip_helper(struct sockaddr_storage addr ,char *ipAddress, int *port)
 {
-    struct sockaddr_in *ipv4 = NULL; 
-    struct sockaddr_in6 *ipv6 = NULL; 
-    if(addr->sa_family == AF_INET6){
-        ipv6 = (struct sockaddr_in6 *)addr;
-        return ntohs(ipv6->sin6_port);
+     if(addr.ss_family == AF_INET){
+        //IPv4-Fall
+        struct sockaddr_in *ipv4 = (struct sockaddr_in *)&addr;
+        *port = ntohs(ipv4->sin_port); 
+        inet_ntop(AF_INET, &(ipv4->sin_addr), ipAddress, INET_ADDRSTRLEN);
+    }else
+    if(addr.ss_family == AF_INET6){
+        //IPv6-Fall
+        struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)&addr; 
+        *port = ntohs(ipv6->sin6_port); 
+        inet_ntop(AF_INET6, &(ipv6->sin6_addr), ipAddress, INET6_ADDRSTRLEN);
+    }else
+    {
+        printf("\nUnknown client address ....\n"); 
+        exit(EXIT_FAILURE); 
     }
-    if(addr->sa_family == AF_INET){
-        ipv4 = (struct sockaddr_in *)addr;
-        return ntohs(ipv4->sin_port); 
-    }
-    return -1; 
 }
-
 
 int getPortFromConnectedClient(int fd)
 {
