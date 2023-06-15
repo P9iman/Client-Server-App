@@ -9,7 +9,6 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/select.h>
-#include <sys/utsname.h>
 #include <netdb.h>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -28,11 +27,11 @@ void handlePut(char *arg, int socketFd, int dataLength);
 void setnonblocking(int socket);
 int getPortFromConnectedClient(int fd);
 void getHostname(struct sockaddr *addr, char *hostname, int hostnameLen); 
-void get_port_and_ip_server(int sockertFd, char *ipAddress, int *port); 
+void get_port_and_ip_server(int socketFd, char *ipAddress, int *port);
 void get_port_and_ip_client(int socketFd, char *ipAddress, int *port); 
 void get_port_and_ip_helper(struct sockaddr_storage addr ,char *ipAddress, int *port); 
 
-
+int filesCounter; /*Diese Variable ist dazu da um die Anzahl an Files auf dem Server zu tracken*/
 char serverHostname[HOSTNAME_SIZE];  
 int sfd_listener; /*sfd_listener = Socket-File-Diskreptor für listening*/
 fd_set read_fdset; /*in diesem Set mit File-Discreptoren sind die fds für die Sockets aus denen gelesen werden soll*/ 
@@ -65,7 +64,7 @@ void setnonblocking(int socket)
     }
 }
 
-void build_select_list()
+void buildSelectList()
 {
     //jedes mal nach select muss das fdset neu initialisiert werden
     FD_ZERO(&read_fdset); 
@@ -88,7 +87,7 @@ void handleNewConnection()
     struct sockaddr_storage sa_client;
     socklen_t sa_len = sizeof(struct sockaddr_storage);
     int newConnection;
-    int sendRetVal = 0; 
+    ssize_t sendRetVal = 0;
     int clientPort; 
     char clientIPAddress[INET6_ADDRSTRLEN]; /*Die IPv4 oder IPv6 Adresse vom client*/
     char clientHostname[HOSTNAME_SIZE]; 
@@ -101,7 +100,9 @@ void handleNewConnection()
     if(numConnectedClients == MAX_CLIENTS)
     {
         /* Kein Platz mehr im Server benachrichtige den client mit einer Nachricht der Größe 0*/
-        sendRetVal = send(newConnection, "", 0, 0);  
+        sendRetVal = send(newConnection, "", 0, 0);
+        close(newConnection);
+        return;
     }else{
         sendRetVal = send(newConnection, "Connected", sizeof("Connected"), 0); 
     }
@@ -119,10 +120,14 @@ void handleNewConnection()
 
     // Speichern die Client-Daten in der Datenstruktur
     ClientInfo clientInfo;
-    snprintf(clientInfo.hostname, INET6_ADDRSTRLEN, "%s", clientHostname);
+    snprintf(clientInfo.hostname, HOSTNAME_SIZE, "%s", clientHostname);
     clientInfo.port = clientPort;  
     clientInfo.socketFd = newConnection; 
     //suche einen freien Platz in der Liste von connected clients und speichere die neue Verbindung
+
+    connectedClients[numConnectedClients] = clientInfo;
+    numConnectedClients++;
+/*
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
         if(connectedClients[i].socketFd == 0)
@@ -131,6 +136,7 @@ void handleNewConnection()
             numConnectedClients++;
         }
     }
+*/
 }
 
 void dealWithData(int socketFd)
@@ -184,7 +190,7 @@ void dealWithData(int socketFd)
     }
 }
 
-void read_sockets()
+void readSockets()
 {
     if(FD_ISSET(sfd_listener, &read_fdset))
     {
@@ -203,7 +209,7 @@ void read_sockets()
 int main(int argc, char** argv)
 {
     int yes = 1; // for setsockopt() SO_REUSEADDR, below
-    int readSockets = 0; /*Hier drinn steht der RetVal von select, also die Anzahl an readable Sockets*/
+    int selectRetVal = 0; /*Hier drinn steht der RetVal von select, also die Anzahl an readable Sockets*/
     char serverIPAddress[INET6_ADDRSTRLEN];
     char* serverPort; /*Über diesen Port hört der Server auf neue Verbindungsanfragen*/  
 	memset(msgBuffer, 0, BUFFER_SIZE);
@@ -236,7 +242,7 @@ int main(int argc, char** argv)
 	 * wird die IP-Adresse 0.0.0.0 oder 127.0.0.1 verwendet.
 	*/
 	if((getddrinfoRetVal = getaddrinfo(NULL,serverPort, &hints, &serverInfo)) != 0)
-	{
+    {
 		fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(getddrinfoRetVal));
 		return 1; 
 	}
@@ -291,22 +297,22 @@ int main(int argc, char** argv)
      */
     while (1)
 	{
-        build_select_list(); 
+        buildSelectList();
 
-        readSockets = select(FD_SETSIZE, &read_fdset, NULL, NULL, NULL);
-        if(readSockets == -1)
+        selectRetVal = select(FD_SETSIZE, &read_fdset, NULL, NULL, NULL);
+        if(selectRetVal == -1)
         {
             perror("select in main()");
             return EXIT_FAILURE;
         }
-        if(readSockets == 0)
+        if(selectRetVal == 0)
         {
             //kein Socket ist ready für read. Zeige einfach das der Server noch läuft.
             printf(".");
             //fflush(stdout);
         }else
         {
-            read_sockets();
+            readSockets();
         }
 	}
 }
@@ -472,17 +478,21 @@ void handlePut(char *arg, int socketFd, int dataLength)
 void handleList(int socketFd)
 {
     //char msgBuffer[BUFFER_SIZE];
-    int counterConnectedClients = 0; 
+    int counterConnectedClients = 0;
+    strcpy(msgBuffer, "");
+
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
         if(connectedClients[i].socketFd != 0)
         {
-            sprintf(msgBuffer, "%s : %d\n",connectedClients[i].hostname, connectedClients[i].port);
+            char clientInfo[BUFFER_SIZE];
+            sprintf(clientInfo, "%s : %d\n",connectedClients[i].hostname, connectedClients[i].port);
+            strcat(msgBuffer, clientInfo);
             counterConnectedClients++;
         }
     }
-    sprintf(msgBuffer, "%d Clients verbunden\n", counterConnectedClients);
-    if(send(socketFd, msgBuffer, sizeof(msgBuffer), 0) == -1)
+    sprintf(msgBuffer + strlen(msgBuffer),"%d Client[s] verbunden\n", counterConnectedClients);
+    if(send(socketFd, msgBuffer, strlen(msgBuffer), 0) == -1)
     {
         perror("Error in send");
         exit(EXIT_FAILURE);
@@ -500,55 +510,69 @@ void handleList(int socketFd)
 */
 void handleFiles(int socketFd)
 {
-    char directory[] = ".";
-    //char msgBuffer[BUFFER_SIZE];
-    DIR *dir;
-    struct dirent *entry;
-    struct stat file_stat;
-    struct tm *modified_time;
-    char modified_time_str[20];
-    int numFiles = 0;
-    // Verzeichnis öffnen
-    dir = opendir(directory);
-    if (dir == NULL) {
-        perror("Fehler beim Öffnen des Verzeichnisses");
-        exit(EXIT_FAILURE);
-    }
-
-    // Alle Einträge im Verzeichnis durchlaufen
-    while ((entry = readdir(dir)) != NULL)
-    {
-        // Kompletten Dateipfad erstellen
-        char file_path[256];
-        //sprintf(file_path, "%s/%s", directory, entry->d_name);
-        snprintf(file_path, sizeof(file_path), "%s/%s", directory, entry->d_name);
-
-        // Dateiattribute abrufen
-        if (stat(file_path, &file_stat) == -1)
+    if(filesCounter == 0){
+        sprintf(msgBuffer, "%d Datei[en]\n", filesCounter);
+        if(send(socketFd, msgBuffer, sizeof(msgBuffer), 0) == -1)
         {
-            perror("Fehler beim Abrufen von Dateiattributen");
+            perror("send in handleFiles");
             exit(EXIT_FAILURE);
         }
+    }else
+    {
+        char directory[] = ".";
+        DIR *dir;
+        struct dirent *entry;
+        struct stat file_stat;
+        struct tm *modified_time;
+        char modified_time_str[20];
+        int numFiles = 0;
 
-        // Nur reguläre Dateien berücksichtigen
-        if (S_ISREG(file_stat.st_mode) && strstr(entry->d_name, ".txt") != NULL)
+        // Verzeichnis öffnen
+        dir = opendir(directory);
+        if (dir == NULL) {
+            perror("opendir in handleFiles()");
+            exit(EXIT_FAILURE);
+        }
+        // Alle Einträge im Verzeichnis durchlaufen
+        while ((entry = readdir(dir)) != NULL)
         {
-            // Letzte Änderungszeit
-            modified_time = localtime(&file_stat.st_mtime);
-            strftime(modified_time_str, sizeof(modified_time_str), "%Y-%m-%d %H:%M:%S", modified_time);
-            sprintf(msgBuffer, "%s : %s %lld\n",entry->d_name,  modified_time_str, (long long)file_stat.st_size);
-            numFiles++;
+            // Kompletten Dateipfad erstellen
+            char file_path[PATH_MAX];
+            //sprintf(file_path, "%s/%s", directory, entry->d_name);
+            snprintf(file_path, sizeof(file_path), "%s/%s", directory, entry->d_name);
+
+            // Dateiattribute abrufen
+            if (stat(file_path, &file_stat) == -1)
+            {
+                perror("stat in handleFiles");
+                exit(EXIT_FAILURE);
+            }
+
+            // Nur reguläre Dateien berücksichtigen
+            if (S_ISREG(file_stat.st_mode) && strstr(entry->d_name, ".txt") != NULL)
+            {
+                // Letzte Änderungszeit
+                modified_time = localtime(&file_stat.st_mtime);
+                strftime(modified_time_str, sizeof(modified_time_str), "%Y-%m-%d %H:%M:%S", modified_time);
+                strcat(msgBuffer, entry->d_name);
+                strcat(msgBuffer, " : ");
+                strcat(msgBuffer, modified_time_str);
+                strcat(msgBuffer, " ");
+                sprintf(msgBuffer + strlen(msgBuffer), "%lld\n", (long long)file_stat.st_size);
+                numFiles++;
+            }
+        }
+        sprintf(msgBuffer + strlen(msgBuffer), "%d Datei[en]\n", numFiles);
+        // Verzeichnis schließen
+        closedir(dir);
+
+        if(send(socketFd, msgBuffer, sizeof(msgBuffer), 0) == -1)
+        {
+            perror("send in handleFiles()");
+            exit(EXIT_FAILURE);
         }
     }
-    sprintf(msgBuffer, "%d Dateien\n", numFiles);
-    // Verzeichnis schließen
-    closedir(dir);
 
-    if(send(socketFd, msgBuffer, sizeof(msgBuffer), 0) == -1)
-    {
-        perror("Error in send");
-        exit(EXIT_FAILURE);
-    }
 }
 
 /**

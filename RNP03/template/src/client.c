@@ -233,8 +233,9 @@ int sendGetRequest(int socketFd, char* filename)
 
 int sendPutRequest(int socketFd, char* filename)
 {
-    char msgBuffer[MSG_BUFFER_SIZE+1];
+    char msgBuffer[MSG_BUFFER_SIZE];
     memset(msgBuffer, 0, MSG_BUFFER_SIZE);
+
     FILE* file =  fopen(filename, "r");
     if(file == NULL)
     {
@@ -242,15 +243,14 @@ int sendPutRequest(int socketFd, char* filename)
         return ERROR_PUT;
     }else
     {
+        //fread liest Daten (Bytes) von dem file und schreibt die Daten in den msgBuffer
         size_t newLen = fread(msgBuffer, sizeof(char), MSG_BUFFER_SIZE, file);
-        if (ferror( file ) != 0 )
+        if(ferror(file) != 0)
         {
             fputs("Error reading file", stderr);
             return ERROR_PUT;
-        }else
-        {
-            msgBuffer[newLen++] = '\0'; /* Just to be safe. */
         }
+        fclose(file);
         if(send(socketFd, msgBuffer, strlen(msgBuffer), 0) == -1)
         {
             perror("send");
