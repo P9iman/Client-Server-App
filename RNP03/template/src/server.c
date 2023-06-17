@@ -127,39 +127,31 @@ void handleNewConnection()
 
     connectedClients[numConnectedClients] = clientInfo;
     numConnectedClients++;
-/*
-    for(int i = 0; i < MAX_CLIENTS; i++)
-    {
-        if(connectedClients[i].socketFd == 0)
-        {
-            connectedClients[i] = clientInfo; 
-            numConnectedClients++;
-        }
-    }
-*/
 }
 
 void dealWithData(int socketFd)
 {
+    char dataBuffer[BUFFER_SIZE];
+    memset(dataBuffer, 0, BUFFER_SIZE);
     //Return Value vom recv
     ssize_t recvRetVal;
-    if ((recvRetVal = recv(socketFd, msgBuffer, sizeof(msgBuffer), 0)) > 0)
+    if ((recvRetVal = recv(socketFd, dataBuffer, sizeof(dataBuffer), 0)) > 0)
     {
-        //TODO Auf EOT Zeichen achten
-
-        if(strncmp("Get ", msgBuffer, 4) == 0)
+        printf("Received data from client: %s\n", dataBuffer);
+        if(strncmp("Get ", dataBuffer, 4) == 0)
         {
-            handleGet(msgBuffer, socketFd);
+            handleGet(dataBuffer, socketFd);
         }else
-        if(strncmp("Put ", msgBuffer, 4) == 0)
+        if(strncmp("Put ", dataBuffer, 4) == 0)
         {
-            handlePut(msgBuffer, socketFd, sizeof(msgBuffer));
+            printf("Received Put-Request\n");
+            handlePut(msgBuffer, socketFd, sizeof(dataBuffer));
         }else
-        if(strncmp("Files", msgBuffer, 5) == 0)
+        if(strncmp("Files", dataBuffer, 5) == 0)
         {
             handleFiles(socketFd);
         }else
-        if(strncmp("List", msgBuffer, 4) == 0)
+        if(strncmp("List", dataBuffer, 4) == 0)
         {
             handleList(socketFd);
         }
@@ -200,6 +192,7 @@ void readSockets()
     { 
         if((connectedClients[i].socketFd != 0) && FD_ISSET(connectedClients[i].socketFd, &read_fdset))
         {
+            printf("New Data/Request from clients\n");
             dealWithData(connectedClients[i].socketFd);
         }
     }
@@ -427,12 +420,16 @@ void handlePut(char *arg, int socketFd, int dataLength)
 	//Parse den Dateinamen aus der Nachricht
 	char* filename = strtok(arg + 4, " ");
 
-	FILE *file = fopen(filename, "w");
+    printf("Filename konnte geparsed werde: %s\n", filename);
+
+    //Erstelle und öffne ein File mit dem Namen in filename
+    FILE *file = fopen(filename, "w");
 	if(file == NULL)
 	{
-		perror("Fehler beim Öffnen der Datei");
+		perror("fopen in handlePut");
         exit(EXIT_FAILURE);
 	}
+
 
 	//Dateiinhalt parsen
 	char dateiInhalt[BUFFER_SIZE-4]; //252
@@ -462,7 +459,6 @@ void handlePut(char *arg, int socketFd, int dataLength)
 	char timerString[80]; 
 	strftime(timerString, sizeof(timerString), "%d-%m-%Y %H:%M:%S", timeinfo); 
 
-    //TODO 
 	snprintf(response, sizeof(response), "OK %s, Server IP: %s, Date: %s %s", serverHostname, serverIP, __DATE__, timerString);
 	send(socketFd, response, sizeof(response), 0);
 }
@@ -477,7 +473,6 @@ void handlePut(char *arg, int socketFd, int dataLength)
 */
 void handleList(int socketFd)
 {
-    //char msgBuffer[BUFFER_SIZE];
     int counterConnectedClients = 0;
     strcpy(msgBuffer, "");
 
@@ -494,7 +489,7 @@ void handleList(int socketFd)
     sprintf(msgBuffer + strlen(msgBuffer),"%d Client[s] verbunden\n", counterConnectedClients);
     if(send(socketFd, msgBuffer, strlen(msgBuffer), 0) == -1)
     {
-        perror("Error in send");
+        perror("send in handleList");
         exit(EXIT_FAILURE);
     }
 }
@@ -581,14 +576,14 @@ void handleFiles(int socketFd)
 void getHostname(struct sockaddr *addr, char *hostname, int hostnameLen) 
 {
     int getnameinfoRetVal; 
-    socklen_t addrLen = (addr->sa_family == AF_INET) ?  INET_ADDRSTRLEN : INET6_ADDRSTRLEN; 
-
-    getnameinfoRetVal = getnameinfo(addr, addrLen, hostname, hostnameLen, NULL, 0, 0); 
-    (getnameinfoRetVal != 0) ? fprintf(stderr, "error in getnameinfo: %s\n", gai_strerror(getnameinfoRetVal)), exit(EXIT_FAILURE) 
-    : (void)0;
+    socklen_t addrLen = (addr->sa_family == AF_INET) ?  INET_ADDRSTRLEN : INET6_ADDRSTRLEN;
+    getnameinfoRetVal = getnameinfo(addr, addrLen, hostname, hostnameLen, NULL, 0, 0);
+    if (getnameinfoRetVal != 0) {
+        fprintf(stderr, "error in getnameinfo: %s\n", gai_strerror(getnameinfoRetVal)), exit(EXIT_FAILURE);
+    }
     if(*serverHostname == '\0')
     {
-        printf("Hostname couldnt be determined\nSetting numeric form\n"); 
+        printf("Hostname couldnt be determined\nSetting numeric form\n");
     }
 }
 
@@ -612,7 +607,7 @@ void get_port_and_ip_server(int socketFd, char *ipAddress, int *port)
     //einzige Unterschied zwischen get_port_and_ip_client und get_port_and_ip_server ist das get_port_and_ip_server getsockname benutzt
     if (getsockname(socketFd, (struct sockaddr *)&addr, &len) == -1) 
     {
-        perror("Fehler beim Abrufen der Socket-Adresse");
+        perror("getsockname in get_port_and_ip_server");
         exit(EXIT_FAILURE); 
     }
     get_port_and_ip_helper(addr, ipAddress, port); 

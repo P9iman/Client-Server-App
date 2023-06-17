@@ -13,7 +13,7 @@
 #define MSG_BUFFER_SIZE 256
 #define INPUT_SIZE 200
 #define COMMAND_SIZE 7
-#define FILENAME_SIZE 193
+#define FILENAME_SIZE 100
 
 #define ERROR_GET 1
 #define ERROR_PUT 2
@@ -22,7 +22,7 @@
 #define ERROR_QUIT 5
 
 int sendGetRequest(int socketFd, char* filename);
-int sendPutRequest(int socketFd, char* filename);
+int sendPutRequest(int socketFd, char* filename, int filenameSize);
 int sendFilesRequest(int socketFd);
 int sendListRequest(int socketFd);
 int sendQuitRequest(int socketFd);
@@ -38,7 +38,7 @@ int main(int argc, char** argv)
     char *port = NULL; 
     char *serverAddr = NULL;
     char recvMsgBuffer[MSG_BUFFER_SIZE];
-    ssize_t recvRetVal = 0;
+    ssize_t recvRetVal;
     int errorCode;
 
     //Über diesen Socket findet die Kommunikation mit dem Server statt
@@ -93,14 +93,10 @@ int main(int argc, char** argv)
                 printf("Server ist voll. Bitte versuche es später erneut!\n"); 
                 close(socketFd);
                 exit(EXIT_SUCCESS);
-            }else
-            if(recvRetVal > 0)
-            {
-                printf("Erfolgreich verbunden\n"); 
-            }else
-            {
-                perror("Error in recv"); 
-                exit(EXIT_FAILURE); 
+            }
+            if(recvRetVal < 0){
+                perror("Error in recv");
+                exit(EXIT_FAILURE);
             }
             //wir konnten uns erfolgreich über einen Socket mit dem Server verbinden
             //printf("Es konnte sich mit dem Server verbunden werden\n ");
@@ -135,20 +131,22 @@ int main(int argc, char** argv)
     char filename[FILENAME_SIZE];
     char command[COMMAND_SIZE];
     char* fgetsRetVal;
-  /**
-   * In dieser Schleife werden die Befehle vom Client angenommen
-   */
-  while(1)
-  {
+    int filenameSize;
+    /**
+     * In dieser while(1) Schleife werden die Befehle des Clienten entgegengenommen
+     */
+    while(1)
+    {
     fgetsRetVal =  fgets(input, INPUT_SIZE, stdin);
       if(fgetsRetVal == NULL)
       {
           fprintf(stderr, "Error: Reading Input from stdin in Line: %d\n", __LINE__);
       }
-      //input[strcspn(input, "\n")] = '\0';
-
       // Eingabe in Befehl und Dateinamen aufteilen
       sscanf(input, "%s %s", command, filename);
+
+      filenameSize = (int)strlen(filename) + 1; //+1 damit '\0' auch gezählt wird
+      printf("Filenamesize: %d\n", filenameSize);
 
       // Befehl überprüfen und entsprechende Aktion ausführen
       if (strcmp(command, "List") == 0)
@@ -171,7 +169,7 @@ int main(int argc, char** argv)
               printf("Bitte geben Sie einen Dateinamen ein!\n");
               continue;
           }
-          errorCode = sendPutRequest(socketFd, filename);
+          errorCode = sendPutRequest(socketFd, filename, filenameSize);
       } else if (strcmp(command, "Files") == 0)
       {
         errorCode = sendFilesRequest(socketFd);
@@ -190,17 +188,19 @@ int main(int argc, char** argv)
           continue;
       }if(errorCode == 0)
       {
+          printf("Warte auf Response vom Server\n");
           recvRetVal =  recv(socketFd,recvMsgBuffer,MSG_BUFFER_SIZE, 0);
           if(recvRetVal < 0)
           {
               perror("recv Msg from Server");
+              return EXIT_FAILURE;
           }else{
               //Gib die Msg aus
               printf("%s", recvMsgBuffer);
           }
       }else
       {
-          switch(errorCode)
+          switch(errorCode) // NOLINT(hicpp-multiway-paths-covered)
           {
               case ERROR_LIST : printf("List-Request konnte nicht geschickt werden!\n");
               break;
@@ -213,7 +213,7 @@ int main(int argc, char** argv)
           }
           continue;
       }
-  }
+    }
   return 0;
 }
 
@@ -231,34 +231,97 @@ int sendGetRequest(int socketFd, char* filename)
     return EXIT_SUCCESS;
 }
 
-int sendPutRequest(int socketFd, char* filename)
+int sendPutRequest(int socketFd, char* filename, int filenameSize)
 {
+    char space[] = " ";
     char msgBuffer[MSG_BUFFER_SIZE];
     memset(msgBuffer, 0, MSG_BUFFER_SIZE);
+    char filenameBuffer[filenameSize+2];
+    strncpy(filenameBuffer, filename, strlen(filename));
+    strcat(filenameBuffer, space);
+
+
 
     FILE* file =  fopen(filename, "r");
     if(file == NULL)
     {
         perror("Fehler beim öffnen. Datei existiert wohlmöglich nicht");
         return ERROR_PUT;
-    }else
+    }
+    // Bestimme die Größe der Datei
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    if(fileSize <= 0)
     {
-        //fread liest Daten (Bytes) von dem file und schreibt die Daten in den msgBuffer
-        size_t newLen = fread(msgBuffer, sizeof(char), MSG_BUFFER_SIZE, file);
-        if(ferror(file) != 0)
+        printf("Die Datei ist leer oder ein Fehler ist aufgetreten.\n");
+        fclose(file);
+        return ERROR_PUT;
+    }
+    if(fileSize >= MSG_BUFFER_SIZE - fileSize - 2)
+    {
+        printf("Die Datei ist zu groß, um sie komplett zu lesen.\n");
+        fclose(file);
+        return ERROR_PUT;
+    }
+    char fileContent[fileSize+1];
+    printf("Filesize ist: %ld\n", fileSize);
+    size_t retValfRead = fread(fileContent, fileSize, sizeof(char), file);
+    if(retValfRead < fileSize)
+    {
+        printf("Gelesen aus dem File: %zu\n", retValfRead);
+
+        if(feof(file) != 0) //Schau ob das Ende vom File erreicht wurde
+        {
+            fputs("Reached end of file while reading\n", stderr);
+        }
+        if(ferror(file) != 0) //Schau ob es beim lesen zu einem Fehler kam
         {
             fputs("Error reading file", stderr);
-            return ERROR_PUT;
         }
-        fclose(file);
-        if(send(socketFd, msgBuffer, strlen(msgBuffer), 0) == -1)
-        {
-            perror("send");
-            return ERROR_PUT;
-        }
-        return EXIT_SUCCESS;
+        clearerr(file);
+        return ERROR_PUT;
     }
+    printf("%zu Byte wurden in den msgBuffer geschrieben\n", retValfRead);
+
+
+/*
+    retValfRead = fread(msgBuffer + filenameSize + 1, sizeof(char), fileSize, file);
+    if(retValfRead < fileSize)
+    {
+        if(feof(file) != 0) //Schau ob das Ende vom File erreicht wurde
+        {
+            fputs("Reached end of file while reading\n", stderr);
+        }
+        if(ferror(file) != 0) //Schau ob es beim lesen zu einem Fehler kam
+        {
+            fputs("Error reading file", stderr);
+        }
+        clearerr(file);
+        return ERROR_PUT;
+    }
+*/
+    fclose(file); //file wird nicht mehr gebraucht schließe das file
+
+    strcat(msgBuffer, filenameBuffer);
+    strcat(msgBuffer, fileContent);
+    printf("MsgBuffer Inhalt: %s\n", msgBuffer);
+
+    ssize_t byteSent = send(socketFd, msgBuffer, strlen(msgBuffer), 0);
+    printf("Gesendete Nachricht: %s\n", msgBuffer);
+    if(byteSent == -1)
+    {
+        perror("send in sendPutRequest");
+        return ERROR_PUT;
+    }else
+    if(byteSent < strlen(msgBuffer)){
+        printf("Nicht alle Daten erfolgreich gesendet.\n");
+        return ERROR_PUT;
+    }
+    printf("Put request konnte abgeschickt werden\n");
+    return EXIT_SUCCESS;
 }
+
 
 int sendFilesRequest(int socketFd)
 {
