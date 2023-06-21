@@ -146,7 +146,7 @@ int main(int argc, char** argv)
       sscanf(input, "%s %s", command, filename);
 
       filenameSize = (int)strlen(filename) + 1; //+1 damit '\0' auch gezählt wird
-      printf("Filenamesize: %d\n", filenameSize);
+      //printf("Filenamesize: %d\n", filenameSize);
 
       // Befehl überprüfen und entsprechende Aktion ausführen
       if (strcmp(command, "List") == 0)
@@ -188,7 +188,7 @@ int main(int argc, char** argv)
           continue;
       }if(errorCode == 0)
       {
-          printf("Warte auf Response vom Server\n");
+          //printf("Warte auf Response vom Server\n");
           recvRetVal =  recv(socketFd,recvMsgBuffer,MSG_BUFFER_SIZE, 0);
           if(recvRetVal < 0)
           {

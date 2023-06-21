@@ -137,7 +137,7 @@ void dealWithData(int socketFd)
     ssize_t recvRetVal;
     if ((recvRetVal = recv(socketFd, dataBuffer, sizeof(dataBuffer), 0)) > 0)
     {
-        printf("Received data from client: %s\n", dataBuffer);
+        //printf("Received data from client: %s\n", dataBuffer);
         if(strncmp("Get ", dataBuffer, 4) == 0)
         {
             handleGet(dataBuffer, socketFd);
@@ -192,7 +192,7 @@ void readSockets()
     { 
         if((connectedClients[i].socketFd != 0) && FD_ISSET(connectedClients[i].socketFd, &read_fdset))
         {
-            printf("New Data/Request from clients\n");
+            //printf("New Data/Request from clients\n");
             dealWithData(connectedClients[i].socketFd);
         }
     }
@@ -253,7 +253,7 @@ int main(int argc, char** argv)
 		if(bind(sfd_listener, (struct sockaddr*)p->ai_addr, p->ai_addrlen) == 0)
 		{            
             //Rufe den Serhostname mit getnameinfo ab
-            getHostname(serverInfo->ai_addr, serverHostname, HOSTNAME_SIZE); 
+            //getHostname(serverInfo->ai_addr, serverHostname, HOSTNAME_SIZE); 
             //Der fd sfd_listener konnte erfolgreich mit der Socketadresse gebunden werden
 			break;
 		}else
@@ -279,7 +279,7 @@ int main(int argc, char** argv)
 
     int port; 
     get_port_and_ip_server(sfd_listener, serverIPAddress, &port); 
-    printf("Serverhostname: %s\n", serverHostname); 
+    //printf("Serverhostname: %s\n", serverHostname); 
     printf("Server local IP Adresse: %s\nServer listening on Port: %d\n\n", serverIPAddress, port);
     printf("Waiting for TCP connections ... \n");
     maxFd = sfd_listener; /*der letzte fd ist der größte somit sfd_listener*/
