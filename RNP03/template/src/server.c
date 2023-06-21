@@ -421,12 +421,12 @@ void handleGet(char *arg, int socketFd)
 */
 void handlePut(char *arg, int socketFd, int dataLength)
 {
-    printf("HandlePut aufgerufen\n"); 
+    printf("HandlePut aufgerufen %d\n", __LINE__); 
 
     /*=======Parse den Dateinamen aus der Nachricht=======*/
     
     char buffer[strlen(arg) + 1]; 
-    char* filename; 
+    char filename[256]; 
     //Kopiere den Inhalt des Nachrichtenpuffers um ihn zu modifizieren
     strcpy(buffer, arg); 
     //char* command = strtok(buffer, " "); 
@@ -437,18 +437,21 @@ void handlePut(char *arg, int socketFd, int dataLength)
         printf("Dateiname fehlt.\n");
         exit(EXIT_FAILURE); 
     }
+	printf("in handlePut bis: %d gekommen\n", __LINE__);
 
     while(*filenameStart == ' '){
         filenameStart++; 
     }
 
+	printf("in handlePut bis: %d gekommen\n", __LINE__); 
+
     char* filenameEnd = strrchr(filenameStart, ' '); 
     if(filenameEnd != NULL){
         *filenameEnd = '\0'; 
     }
-    strcpy(filename, filenameStart); 
-
-    
+	printf("in handlePut bis: %d gekommen\n", __LINE__); 
+    strcpy(filename, filenameStart);
+		
 	//char* filename = strtok(arg + 4, " ");
 
     printf("Filename konnte geparsed werde: %s\n", filename);
@@ -462,13 +465,14 @@ void handlePut(char *arg, int socketFd, int dataLength)
 		perror("fopen in handlePut");
         exit(EXIT_FAILURE);
 	}
-    char *fileContent = strchr(arg, ' '); 
+    char fileContent[256];
+	strcpy(fileContent, strchr(msgBuffer, ' ')+1); 
     
     if(fileContent == NULL){
         printf("Dateiinhalt fehlt.\n"); 
         exit(EXIT_FAILURE); 
     }
-    fileContent++; 
+    //fileContent++; 
     printf("Dateiinhalt: %s\n", fileContent); 
 
     fputs(fileContent, file); 
