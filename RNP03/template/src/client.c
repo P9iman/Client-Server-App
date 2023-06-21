@@ -145,7 +145,8 @@ int main(int argc, char** argv)
       // Eingabe in Befehl und Dateinamen aufteilen
       sscanf(input, "%s %s", command, filename);
 
-      filenameSize = (int)strlen(filename) + 1; //+1 damit '\0' auch gezählt wird
+        filenameSize = sizeof(filename)/sizeof(filename[0]); 
+      //filenameSize = (int)strlen(filename) + 1; //+1 damit '\0' auch gezählt wird
       //printf("Filenamesize: %d\n", filenameSize);
 
       // Befehl überprüfen und entsprechende Aktion ausführen
@@ -236,10 +237,11 @@ int sendPutRequest(int socketFd, char* filename, int filenameSize)
     char space[] = " ";
     char msgBuffer[MSG_BUFFER_SIZE];
     memset(msgBuffer, 0, MSG_BUFFER_SIZE);
-    char filenameBuffer[filenameSize+2];
-    strncpy(filenameBuffer, filename, strlen(filename));
+    char filenameBuffer[filenameSize+2]; //+2 weil Leerzeichen und '\0' reinkommen
+    strncpy(filenameBuffer, filename, filenameSize);
     strcat(filenameBuffer, space);
 
+    strcat(msgBuffer, "Put "); 
 
 
     FILE* file =  fopen(filename, "r");
@@ -264,9 +266,9 @@ int sendPutRequest(int socketFd, char* filename, int filenameSize)
         fclose(file);
         return ERROR_PUT;
     }
-    char fileContent[fileSize+1];
-    printf("Filesize ist: %ld\n", fileSize);
-    size_t retValfRead = fread(fileContent, fileSize, sizeof(char), file);
+    char fileContent[fileSize+1]; //+1 für Null Character 
+    //printf("Filesize ist: %ld\n", fileSize);
+    size_t retValfRead = fread(fileContent, sizeof(char), fileSize , file);
     if(retValfRead < fileSize)
     {
         printf("Gelesen aus dem File: %zu\n", retValfRead);
@@ -280,35 +282,20 @@ int sendPutRequest(int socketFd, char* filename, int filenameSize)
             fputs("Error reading file", stderr);
         }
         clearerr(file);
+        printf("fread ist fehlgeschlagen\n"); 
+
         return ERROR_PUT;
     }
-    printf("%zu Byte wurden in den msgBuffer geschrieben\n", retValfRead);
-
-
-/*
-    retValfRead = fread(msgBuffer + filenameSize + 1, sizeof(char), fileSize, file);
-    if(retValfRead < fileSize)
-    {
-        if(feof(file) != 0) //Schau ob das Ende vom File erreicht wurde
-        {
-            fputs("Reached end of file while reading\n", stderr);
-        }
-        if(ferror(file) != 0) //Schau ob es beim lesen zu einem Fehler kam
-        {
-            fputs("Error reading file", stderr);
-        }
-        clearerr(file);
-        return ERROR_PUT;
-    }
-*/
+    //printf("%zu Byte wurden in den msgBuffer geschrieben\n", retValfRead);
     fclose(file); //file wird nicht mehr gebraucht schließe das file
 
     strcat(msgBuffer, filenameBuffer);
     strcat(msgBuffer, fileContent);
+    
     printf("MsgBuffer Inhalt: %s\n", msgBuffer);
 
     ssize_t byteSent = send(socketFd, msgBuffer, strlen(msgBuffer), 0);
-    printf("Gesendete Nachricht: %s\n", msgBuffer);
+    //printf("Gesendete Nachricht: %s\n", msgBuffer);
     if(byteSent == -1)
     {
         perror("send in sendPutRequest");

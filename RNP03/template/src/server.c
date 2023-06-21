@@ -417,10 +417,39 @@ void handleGet(char *arg, int socketFd)
 */
 void handlePut(char *arg, int socketFd, int dataLength)
 {
-	//Parse den Dateinamen aus der Nachricht
-	char* filename = strtok(arg + 4, " ");
+    printf("HandlePut aufgerufen\n"); 
+
+    /*=======Parse den Dateinamen aus der Nachricht=======*/
+    
+    char buffer[strlen(arg) + 1]; 
+    char* filename; 
+    //Kopiere den Inhalt des Nachrichtenpuffers um ihn zu modifizieren
+    strcpy(buffer, arg); 
+    //char* command = strtok(buffer, " "); 
+    char* filenameStart = strtok(NULL, " "); 
+   
+    if(filenameStart == NULL)
+    {
+        printf("Dateiname fehlt.\n");
+        exit(EXIT_FAILURE); 
+    }
+
+    while(*filenameStart == ' '){
+        filenameStart++; 
+    }
+
+    char* filenameEnd = strrchr(filenameStart, ' '); 
+    if(filenameEnd != NULL){
+        *filenameEnd = '\0'; 
+    }
+    strcpy(filename, filenameStart); 
+
+    
+	//char* filename = strtok(arg + 4, " ");
 
     printf("Filename konnte geparsed werde: %s\n", filename);
+
+    /*=======Parse den Inhalt des Files aus der Nachricht und erstelle File=======*/
 
     //Erstelle und öffne ein File mit dem Namen in filename
     FILE *file = fopen(filename, "w");
@@ -429,9 +458,18 @@ void handlePut(char *arg, int socketFd, int dataLength)
 		perror("fopen in handlePut");
         exit(EXIT_FAILURE);
 	}
+    char *fileContent = strchr(arg, ' '); 
+    
+    if(fileContent == NULL){
+        printf("Dateiinhalt fehlt.\n"); 
+        exit(EXIT_FAILURE); 
+    }
+    fileContent++; 
+    printf("Dateiinhalt: %s\n", fileContent); 
 
+    fputs(fileContent, file); 
 
-	//Dateiinhalt parsen
+/* 	//Dateiinhalt parsen
 	char dateiInhalt[BUFFER_SIZE-4]; //252
     memcpy(dateiInhalt, arg + 4 + strlen(filename), 200);
 
@@ -442,7 +480,9 @@ void handlePut(char *arg, int socketFd, int dataLength)
         fclose(file);
         exit(EXIT_FAILURE);
     }
-	fclose(file); 
+ */	
+    
+    fclose(file); 
 	printf("Datei lokal auf den Server gespeichert.\n"); 
 
     //Response generieren
