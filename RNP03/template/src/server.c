@@ -90,7 +90,7 @@ void handleNewConnection()
     ssize_t sendRetVal = 0;
     int clientPort; 
     char clientIPAddress[INET6_ADDRSTRLEN]; /*Die IPv4 oder IPv6 Adresse vom client*/
-    char clientHostname[HOSTNAME_SIZE]; 
+    //char clientHostname[HOSTNAME_SIZE]; 
     newConnection = accept(sfd_listener, (struct sockaddr *)&sa_client, &sa_len);
     if(newConnection < 0)
     {
@@ -116,8 +116,9 @@ void handleNewConnection()
     get_port_and_ip_client(newConnection, clientIPAddress, &clientPort); 
     printf("Client with address %s has connected on port %d\n", clientIPAddress, clientPort);
     //rufe den hostname vom client ab
-    getHostname((struct sockaddr*)&sa_client, clientHostname, HOSTNAME_SIZE); 
+    //getHostname((struct sockaddr*)&sa_client, clientHostname, HOSTNAME_SIZE); 
 
+	char clientHostname[] = "LAB33"; 
     // Speichern die Client-Daten in der Datenstruktur
     ClientInfo clientInfo;
     snprintf(clientInfo.hostname, HOSTNAME_SIZE, "%s", clientHostname);
@@ -137,7 +138,7 @@ void dealWithData(int socketFd)
     ssize_t recvRetVal;
     if ((recvRetVal = recv(socketFd, dataBuffer, sizeof(dataBuffer), 0)) > 0)
     {
-        //printf("Received data from client: %s\n", dataBuffer);
+        printf("Received data from client: %s\n", dataBuffer);
         if(strncmp("Get ", dataBuffer, 4) == 0)
         {
             handleGet(dataBuffer, socketFd);
@@ -145,6 +146,8 @@ void dealWithData(int socketFd)
         if(strncmp("Put ", dataBuffer, 4) == 0)
         {
             printf("Received Put-Request\n");
+		printf("Nachricht vom client: %s\n", dataBuffer); 
+
             handlePut(msgBuffer, socketFd, sizeof(dataBuffer));
         }else
         if(strncmp("Files", dataBuffer, 5) == 0)
@@ -192,7 +195,7 @@ void readSockets()
     { 
         if((connectedClients[i].socketFd != 0) && FD_ISSET(connectedClients[i].socketFd, &read_fdset))
         {
-            //printf("New Data/Request from clients\n");
+            printf("New Data/Request from clients\n");
             dealWithData(connectedClients[i].socketFd);
         }
     }
@@ -214,7 +217,7 @@ int main(int argc, char** argv)
   	memset(&hints, 0, sizeof hints); 
   	hints.ai_family = AF_UNSPEC; //Adress-Family ist unspezifiziert somit IPv4 und IPv6 möglich
 	hints.ai_socktype = SOCK_STREAM; 
-	hints.ai_flags = AI_PASSIVE; //befüllt die IP Adresse fuer mich
+	//hints.ai_flags = AI_PASSIVE; //befüllt die IP Adresse fuer mich
     hints.ai_protocol = IPPROTO_TCP; 
 
 	if(argc > 2)
@@ -234,7 +237,8 @@ int main(int argc, char** argv)
 	 * Als hostname wird hier NULL übergeben, abhängig von den ai_flags
 	 * wird die IP-Adresse 0.0.0.0 oder 127.0.0.1 verwendet.
 	*/
-	if((getddrinfoRetVal = getaddrinfo(NULL,serverPort, &hints, &serverInfo)) != 0)
+	//HIER AENDERUNG
+	if((getddrinfoRetVal = getaddrinfo("141.22.27.112",serverPort, &hints, &serverInfo)) != 0)
     {
 		fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(getddrinfoRetVal));
 		return 1; 
