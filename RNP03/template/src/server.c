@@ -13,17 +13,17 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <libgen.h>
 
 #define DEFAULT_PORT 0
 #define BUFFER_SIZE 256
 #define HOSTNAME_SIZE 50
 #define MAX_CLIENTS 10
-#define EOT '\x04'
 
 void handleList(int socketFd);
 void handleFiles(int socketFd);
 void handleGet(char *arg, int socketFd);
-void handlePut(char *arg, int socketFd, int dataLength);
+void handlePut(char *data, int socketFd);
 void setnonblocking(int socket);
 int getPortFromConnectedClient(int fd);
 void getHostname(struct sockaddr *addr, char *hostname, int hostnameLen); 
@@ -35,7 +35,6 @@ int filesCounter; /*Diese Variable ist dazu da um die Anzahl an Files auf dem Se
 char serverHostname[HOSTNAME_SIZE];  
 int sfd_listener; /*sfd_listener = Socket-File-Diskreptor für listening*/
 fd_set read_fdset; /*in diesem Set mit File-Discreptoren sind die fds für die Sockets aus denen gelesen werden soll*/ 
-fd_set copy_read_fdset; 
 int maxFd; /*der größte FD, wird für select benötigt*/
 char msgBuffer[BUFFER_SIZE]; /*Buffer für die Nachricht des Clienten*/
 
@@ -70,7 +69,6 @@ void buildSelectList()
     FD_ZERO(&read_fdset); 
     //auch der listener Fd-Socket muss immer wieder eingefügt werden da er nach select nicht gesetzt ist
     FD_SET(sfd_listener, &read_fdset);
-
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
         if(connectedClients[i].socketFd > 0){
@@ -87,10 +85,12 @@ void handleNewConnection()
     struct sockaddr_storage sa_client;
     socklen_t sa_len = sizeof(struct sockaddr_storage);
     int newConnection;
-    ssize_t sendRetVal = 0;
+    ssize_t sendRetVal;
     int clientPort; 
     char clientIPAddress[INET6_ADDRSTRLEN]; /*Die IPv4 oder IPv6 Adresse vom client*/
-    //char clientHostname[HOSTNAME_SIZE]; 
+    char clientHostname[HOSTNAME_SIZE];
+    memset(clientIPAddress,0, sizeof(clientIPAddress));
+    memset(clientHostname, 0, sizeof(clientHostname));
     newConnection = accept(sfd_listener, (struct sockaddr *)&sa_client, &sa_len);
     if(newConnection < 0)
     {
@@ -100,7 +100,7 @@ void handleNewConnection()
     if(numConnectedClients == MAX_CLIENTS)
     {
         /* Kein Platz mehr im Server benachrichtige den client mit einer Nachricht der Größe 0*/
-        sendRetVal = send(newConnection, "", 0, 0);
+        send(newConnection, "", 0, 0);
         close(newConnection);
         return;
     }else{
@@ -111,21 +111,19 @@ void handleNewConnection()
         perror("send in handleNewConnection()");
         exit(EXIT_FAILURE);  
     }
-    setnonblocking(newConnection);
+    //setnonblocking(newConnection);
 
     get_port_and_ip_client(newConnection, clientIPAddress, &clientPort); 
     printf("Client with address %s has connected on port %d\n", clientIPAddress, clientPort);
-    //rufe den hostname vom client ab
-    //getHostname((struct sockaddr*)&sa_client, clientHostname, HOSTNAME_SIZE); 
+    getHostname((struct sockaddr*)&sa_client, clientHostname, HOSTNAME_SIZE);
 
-	char clientHostname[] = "LAB33"; 
+	//char clientHostname[] = "LAB33";
     // Speichern die Client-Daten in der Datenstruktur
     ClientInfo clientInfo;
     snprintf(clientInfo.hostname, HOSTNAME_SIZE, "%s", clientHostname);
     clientInfo.port = clientPort;  
     clientInfo.socketFd = newConnection; 
     //suche einen freien Platz in der Liste von connected clients und speichere die neue Verbindung
-
     connectedClients[numConnectedClients] = clientInfo;
     numConnectedClients++;
 }
@@ -134,21 +132,17 @@ void dealWithData(int socketFd)
 {
     char dataBuffer[BUFFER_SIZE];
     memset(dataBuffer, 0, BUFFER_SIZE);
-    //Return Value vom recv
     ssize_t recvRetVal;
     if ((recvRetVal = recv(socketFd, dataBuffer, sizeof(dataBuffer), 0)) > 0)
     {
-        printf("Received data from client: %s\n", dataBuffer);
+        printf("Received data from client on port %d: %s\n", getPortFromConnectedClient(socketFd), dataBuffer);
         if(strncmp("Get ", dataBuffer, 4) == 0)
         {
             handleGet(dataBuffer, socketFd);
         }else
         if(strncmp("Put ", dataBuffer, 4) == 0)
         {
-            printf("Received Put-Request\n");
-		printf("Nachricht vom client: %s\n", dataBuffer); 
-
-            handlePut(msgBuffer, socketFd, sizeof(dataBuffer));
+            handlePut(dataBuffer, socketFd);
         }else
         if(strncmp("Files", dataBuffer, 5) == 0)
         {
@@ -163,7 +157,7 @@ void dealWithData(int socketFd)
     {
         /*Wir haben als Return Value von recv() 0 erhalten, das bedeutet ein Client hat die Verbindung zum Server geschlossen*/
         int port = getPortFromConnectedClient(socketFd); 
-        printf("Client on Port %d has disconnected\nClosing Port %d\n",port,port); 
+        printf("Client on Port %d has disconnected... Closing Port %d\n",port,port);
         close(socketFd);
         FD_CLR(socketFd, &read_fdset); //Lösche den fd aus dem Set
         //Entferne (bzw. Markiere) den client als disconnected damit ein Platz im Array frei wird
@@ -195,7 +189,6 @@ void readSockets()
     { 
         if((connectedClients[i].socketFd != 0) && FD_ISSET(connectedClients[i].socketFd, &read_fdset))
         {
-            printf("New Data/Request from clients\n");
             dealWithData(connectedClients[i].socketFd);
         }
     }
@@ -205,7 +198,7 @@ void readSockets()
 int main(int argc, char** argv)
 {
     int yes = 1; // for setsockopt() SO_REUSEADDR, below
-    int selectRetVal = 0; /*Hier drinn steht der RetVal von select, also die Anzahl an readable Sockets*/
+    int selectRetVal; /*Hier drinn steht der RetVal von select, also die Anzahl an readable Sockets*/
     char serverIPAddress[INET6_ADDRSTRLEN];
     char* serverPort; /*Über diesen Port hört der Server auf neue Verbindungsanfragen*/  
 	memset(msgBuffer, 0, BUFFER_SIZE);
@@ -237,8 +230,8 @@ int main(int argc, char** argv)
 	 * Als hostname wird hier NULL übergeben, abhängig von den ai_flags
 	 * wird die IP-Adresse 0.0.0.0 oder 127.0.0.1 verwendet.
 	*/
-	//HIER AENDERUNG
-	if((getddrinfoRetVal = getaddrinfo("141.22.27.112",serverPort, &hints, &serverInfo)) != 0)
+                                        //HIER AENDERUNG
+	if((getddrinfoRetVal = getaddrinfo("localhost",serverPort, &hints, &serverInfo)) != 0)
     {
 		fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(getddrinfoRetVal));
 		return 1; 
@@ -257,7 +250,7 @@ int main(int argc, char** argv)
 		if(bind(sfd_listener, (struct sockaddr*)p->ai_addr, p->ai_addrlen) == 0)
 		{            
             //Rufe den Serhostname mit getnameinfo ab
-            //getHostname(serverInfo->ai_addr, serverHostname, HOSTNAME_SIZE); 
+            getHostname(serverInfo->ai_addr, serverHostname, HOSTNAME_SIZE);
             //Der fd sfd_listener konnte erfolgreich mit der Socketadresse gebunden werden
 			break;
 		}else
@@ -283,7 +276,7 @@ int main(int argc, char** argv)
 
     int port; 
     get_port_and_ip_server(sfd_listener, serverIPAddress, &port); 
-    //printf("Serverhostname: %s\n", serverHostname); 
+    printf("Serverhostname: %s\n", serverHostname);
     printf("Server local IP Adresse: %s\nServer listening on Port: %d\n\n", serverIPAddress, port);
     printf("Waiting for TCP connections ... \n");
     maxFd = sfd_listener; /*der letzte fd ist der größte somit sfd_listener*/
@@ -322,10 +315,10 @@ int main(int argc, char** argv)
  * @return 
  *  
 */
-void handleGet(char *arg, int socketFd)
+void handleGet(char *data, int socketFd)
 {
     //Parse den Filename
-	char* filename = strtok(arg + 4, " ");
+	char* filename = strtok(data + 4, " ");
 	FILE *file = fopen(filename, "r");
 	if(file == NULL)
 	{
@@ -419,82 +412,87 @@ void handleGet(char *arg, int socketFd)
  * 
  * @return
 */
-void handlePut(char *arg, int socketFd, int dataLength)
+void handlePut(char *data, int socketFd)
 {
-    printf("HandlePut aufgerufen %d\n", __LINE__); 
-
-    /*=======Parse den Dateinamen aus der Nachricht=======*/
-    
-    char buffer[strlen(arg) + 1]; 
-    char filename[256]; 
-    //Kopiere den Inhalt des Nachrichtenpuffers um ihn zu modifizieren
-    strcpy(buffer, arg); 
-    //char* command = strtok(buffer, " "); 
-    char* filenameStart = strtok(NULL, " "); 
-   
-    if(filenameStart == NULL)
-    {
-        printf("Dateiname fehlt.\n");
-        exit(EXIT_FAILURE); 
-    }
-	printf("in handlePut bis: %d gekommen\n", __LINE__);
-
-    while(*filenameStart == ' '){
-        filenameStart++; 
-    }
-
-	printf("in handlePut bis: %d gekommen\n", __LINE__); 
-
-    char* filenameEnd = strrchr(filenameStart, ' '); 
-    if(filenameEnd != NULL){
-        *filenameEnd = '\0'; 
-    }
-	printf("in handlePut bis: %d gekommen\n", __LINE__); 
-    strcpy(filename, filenameStart);
-		
-	//char* filename = strtok(arg + 4, " ");
-
-    printf("Filename konnte geparsed werde: %s\n", filename);
-
-    /*=======Parse den Inhalt des Files aus der Nachricht und erstelle File=======*/
-
-    //Erstelle und öffne ein File mit dem Namen in filename
-    FILE *file = fopen(filename, "w");
-	if(file == NULL)
-	{
-		perror("fopen in handlePut");
+    /*===== Als erstes erhält der Server nur den Befehl und den Filenamen =====*/
+    printf("Received Put-Request: %s\n", data);
+    char command[10];
+    char filepath[100];
+    char filecontent[BUFFER_SIZE];
+    memset(filecontent, 0, sizeof(filecontent));
+    memset(filepath, 0, sizeof(filepath));
+    sscanf(data, "%s %s", command, filepath);
+    //Parse nur den Filename und entferne den Pfad, da sonst fopen fehlschlägt
+    char *filename = basename(filepath);
+    printf("Command: %s\n", command);
+    printf("Filename: %s\n", filename);
+    /*===== Öffne ein File mit dem erhaltenen Filenamen =====*/
+    FILE *file = fopen(filename, "a");
+    if(file == NULL){
+        send(socketFd, "NACK", sizeof("NACK"),0);
+        perror("fopen in handlePut");
         exit(EXIT_FAILURE);
-	}
-    char fileContent[256];
-	strcpy(fileContent, strchr(msgBuffer, ' ')+1); 
-    
-    if(fileContent == NULL){
-        printf("Dateiinhalt fehlt.\n"); 
-        exit(EXIT_FAILURE); 
     }
-    //fileContent++; 
-    printf("Dateiinhalt: %s\n", fileContent); 
-
-    fputs(fileContent, file); 
-
-/* 	//Dateiinhalt parsen
-	char dateiInhalt[BUFFER_SIZE-4]; //252
-    memcpy(dateiInhalt, arg + 4 + strlen(filename), 200);
-
-	size_t bytesWritten = fwrite(dateiInhalt, sizeof(char), dataLength-3, file); 
-	if (bytesWritten != (size_t)dataLength)
-    {
-        perror("Fehler beim Schreiben der Daten in die Datei");
+    /*===== Schicke ein ACK, damit der Client weiß das filename korrekt übertragen wurde =====*/
+    char ack[] = "ACK";
+    ssize_t byteSent = send(socketFd, ack, strlen(ack), 0);
+    if(byteSent == -1){
+        perror("send in handlePut");
         fclose(file);
         exit(EXIT_FAILURE);
     }
- */	
-    
-    fclose(file); 
-	printf("Datei lokal auf den Server gespeichert.\n"); 
 
-    //Response generieren
-	char response[256]; 
+    /*===== File konnte geöffnet werden, warte nun auf den Fileinhalt und schreib ihn das geöffnete File =====*/
+    /*===== Schreibe so lange in das File bis das EOT beim Server ankommt =====*/
+    ssize_t recvRet;
+    //char printfBuffer[BUFFER_SIZE];
+    //memset(printfBuffer, 0, BUFFER_SIZE);
+    //int retSnprintf;
+    while((recvRet = recv(socketFd, filecontent, sizeof(msgBuffer), 0)) > 0)
+    {
+        /*===== Bestätige dem client den Erhalt des EOT Zeichens, damit wird Datenübertragun beendet =====*/
+        if(recvRet == 1 && filecontent[0] == '\x04'){
+            char eotRecvResponse[] = "EOT received. Ending transmission\n";
+            byteSent = send(socketFd, eotRecvResponse, sizeof(eotRecvResponse), 0);
+            if(byteSent == -1){
+                perror("send in handlePut");
+                fclose(file);
+                exit(EXIT_FAILURE);
+            }
+            break;
+        }
+        //memset(printfBuffer, 0, BUFFER_SIZE);
+        //retSnprintf = snprintf(printfBuffer, sizeof(printfBuffer), "%s", filecontent);
+        //fprintf(file, "%s", printfBuffer);
+        fprintf(file, "%s", filecontent);
+        /*===== Schicke ACK oder NACK um den Erhalt des ersten Datenblocks zu bestätigen =====*/
+/*
+        if(retSnprintf == -1 || retSnprintf > sizeof(printfBuffer))
+        {
+            char nack[] = "NACK";
+            byteSent = send(socketFd, nack, strlen(nack), 0);
+            if(byteSent == -1){
+                perror("send in handlePut");
+                fclose(file);
+                exit(EXIT_FAILURE);
+            }
+        }
+*/
+        printf("File Content (geprintet in das File):\n%s\n", filecontent);
+        //Man könnte bei Erfolg von fprintf ein ACK schicken, aber ist nicht so wichtig
+        memset(filecontent, 0, sizeof(filecontent));
+    }
+    if(recvRet == -1){
+        perror("recv in handlePut, recv in while-loop");
+        exit(EXIT_FAILURE);
+    }
+    fclose(file);
+	printf("Datei lokal auf den Server gespeichert.\n");
+    //erhöhe den Filescounter um den Befehl Files aktuell zu halten.
+    filesCounter++;
+
+    /*==== Generiere Responsenachricht und schicke erfolgreiche  Speicherung des Files ====*/
+	char response[185];
 	struct sockaddr_in server_addr; 
 	socklen_t len = sizeof(server_addr); 
 	getsockname(socketFd, (struct sockaddr*)&server_addr, &len); 
@@ -505,9 +503,8 @@ void handlePut(char *arg, int socketFd, int dataLength)
 	time_t t = time(NULL); 
 	struct tm* timeinfo = localtime(&t);
 	char timerString[80]; 
-	strftime(timerString, sizeof(timerString), "%d-%m-%Y %H:%M:%S", timeinfo); 
-
-	snprintf(response, sizeof(response), "OK %s, Server IP: %s, Date: %s %s", serverHostname, serverIP, __DATE__, timerString);
+	strftime(timerString, sizeof(timerString), "%d-%m-%Y %H:%M:%S", timeinfo);
+	snprintf(response, sizeof(response), " OK %s,\n Server IP: %s,\n Date: %s %s\n\n", serverHostname, serverIP, __DATE__, timerString);
 	send(socketFd, response, sizeof(response), 0);
 }
 
