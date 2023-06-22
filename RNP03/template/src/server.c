@@ -317,91 +317,7 @@ int main(int argc, char** argv)
 */
 void handleGet(char *data, int socketFd)
 {
-    //Parse den Filename
-	char* filename = strtok(data + 4, " ");
-	FILE *file = fopen(filename, "r");
-	if(file == NULL)
-	{
-		perror("fopen in handleGet()");
-        exit(EXIT_FAILURE);
-	}
-	int fseekRetVal = fseek(file, 0, SEEK_END);
-    if(fseekRetVal != 0)
-    {
-        perror("fseek in handleGet()");
-        exit(EXIT_FAILURE);
-    }
-
-	long fileSize = ftell(file);
-    if(fileSize == -1){
-        perror("ftell in handleGet()");
-        exit(EXIT_FAILURE);
-    }
-
-    fseekRetVal = fseek(file, 0, SEEK_SET);
-    if(fseekRetVal != 0)
-	{
-		perror("fseek in handleGet()");
-        exit(EXIT_FAILURE);
-	} 
-
-	char* fileData = (char*)malloc(fileSize); 
-	if(fileData == NULL)
-	{
-		perror("malloc in handleGet()"); 
-		if(fclose(file) != 0)
-		{
-			perror("fclose nach malloc in handleGet()"); 
-		}
-        exit(EXIT_FAILURE);
-	}
-
-	size_t bytesRead = fread(fileData, sizeof(char), fileSize, file); 
-	if(bytesRead != (size_t)fileSize)
-	{
-		perror("fread in handleGet()"); 
-		if(fclose(file) != 0)
-		{
-			perror("fclose in handleGet()"); 
-		} 
-		free(fileData);
-        exit(EXIT_FAILURE);
-	}
-	if(fclose(file) != 0)
-	{
-		perror("fclose in handleGet()");
-        exit(EXIT_FAILURE);
-	} 
-	// Aktuelle Uhrzeit ermitteln
-    time_t currentTime;
-    currentTime = time(&currentTime);
-
-	struct tm* timeInfo = localtime(&currentTime);
-    char formattedTime[64];
-    size_t strftimeretVal;
-	strftimeretVal =  strftime(formattedTime, sizeof(formattedTime), "%d-%m-%Y %H:%M:%S", timeInfo);
-	if(strftimeretVal == 0)
-	{
-		printf("strftime in line: %d returned 0\n", __LINE__); 
-	}
-
-	//Response-Nachricht erstellen 
-	char *response = (char*)malloc(fileSize + 256); 
-	if(response == NULL)
-	{
-		perror("malloc für *response in handleGet()");
-        exit(EXIT_FAILURE);
-	}
-	sprintf(response, "Datei: %s\nDateigröße: %ld\nLetzte Änderung: %s\n\n%s", filename, fileSize, formattedTime, fileData); 
-	if (send(socketFd, response, strlen(response), 0) == -1)
-    {
-        perror("send in handleGet()");
-        free(fileData);
-        free(response);
-        exit(EXIT_FAILURE);
-    }
-	free(fileData); 
-	free(response); 
+    //TODO implementieren!
 }
 
 /**
@@ -433,21 +349,11 @@ void handlePut(char *data, int socketFd)
         perror("fopen in handlePut");
         exit(EXIT_FAILURE);
     }
-    /*===== Schicke ein ACK, damit der Client weiß das filename korrekt übertragen wurde =====*/
-    char ack[] = "ACK";
-    ssize_t byteSent = send(socketFd, ack, strlen(ack), 0);
-    if(byteSent == -1){
-        perror("send in handlePut");
-        fclose(file);
-        exit(EXIT_FAILURE);
-    }
-
     /*===== File konnte geöffnet werden, warte nun auf den Fileinhalt und schreib ihn das geöffnete File =====*/
     /*===== Schreibe so lange in das File bis das EOT beim Server ankommt =====*/
     ssize_t recvRet;
-    //char printfBuffer[BUFFER_SIZE];
-    //memset(printfBuffer, 0, BUFFER_SIZE);
-    //int retSnprintf;
+    ssize_t byteSent;
+    int retprintf;
     while((recvRet = recv(socketFd, filecontent, sizeof(msgBuffer), 0)) > 0)
     {
         /*===== Bestätige dem client den Erhalt des EOT Zeichens, damit wird Datenübertragun beendet =====*/
@@ -461,23 +367,19 @@ void handlePut(char *data, int socketFd)
             }
             break;
         }
-        //memset(printfBuffer, 0, BUFFER_SIZE);
-        //retSnprintf = snprintf(printfBuffer, sizeof(printfBuffer), "%s", filecontent);
-        //fprintf(file, "%s", printfBuffer);
-        fprintf(file, "%s", filecontent);
+        retprintf = fprintf(file, "%s", filecontent);
         /*===== Schicke ACK oder NACK um den Erhalt des ersten Datenblocks zu bestätigen =====*/
-/*
-        if(retSnprintf == -1 || retSnprintf > sizeof(printfBuffer))
-        {
-            char nack[] = "NACK";
-            byteSent = send(socketFd, nack, strlen(nack), 0);
-            if(byteSent == -1){
-                perror("send in handlePut");
-                fclose(file);
-                exit(EXIT_FAILURE);
-            }
+        char *ackOrNack = "ACK";
+        //-1 da fprintf die Anzahl an Zeichen return die geprintet wurde ohne das '\0'
+        if(retprintf == -1 || retprintf != recvRet-1){
+            ackOrNack = "NACK";
         }
-*/
+        byteSent = send(socketFd, ackOrNack, strlen(ackOrNack), 0);
+        if(byteSent == -1){
+            perror("send in handlePut");
+            fclose(file);
+            exit(EXIT_FAILURE);
+        }
         printf("File Content (geprintet in das File):\n%s\n", filecontent);
         //Man könnte bei Erfolg von fprintf ein ACK schicken, aber ist nicht so wichtig
         memset(filecontent, 0, sizeof(filecontent));

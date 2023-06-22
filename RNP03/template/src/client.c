@@ -40,7 +40,6 @@ int main(int argc, char **argv) {
   char msgBuffer[BUFFER_SIZE];
   ssize_t recvRetVal;
   int errorCode;
-
   //Über diesen Socket findet die Kommunikation mit dem Server statt
   int socketFd;
 
@@ -133,7 +132,7 @@ int main(int argc, char **argv) {
           fprintf(stderr, "Error: Reading Input from stdin in Line: %d\n", __LINE__);
       }
 
-      // Eingabe in Befehl und Dateinamen aufteilen
+    // Eingabe in Befehl und Dateinamen aufteilen
     sscanf(input, "%s %s", command, filename);
 
     // Befehl überprüfen und entsprechende Aktion ausführen
@@ -222,28 +221,15 @@ int sendPutRequest(int socketFd, char *filename) {
   strncat(msgBuffer, " ", sizeof(msgBuffer) - strlen(msgBuffer) -1);
   strncat(msgBuffer, filename, sizeof(msgBuffer) - strlen(msgBuffer) -1);
   ssize_t byteSent = send(socketFd, msgBuffer, strlen(msgBuffer), 0);
+  printf("Sent command and filename: %s\n", msgBuffer);
+
   if(byteSent == -1){
     perror("send in sendPutRequest");
     fclose(file);
     return ERROR_PUT;
   }
-
-  /*===== Warte nun auf das ACK vom Server, dass Filename und Command korrekt übertragen wurden =====*/
   ssize_t recvRet;
-  /*
-  memset(msgBuffer, 0, sizeof(msgBuffer));
-  recvRet = recv(socketFd, msgBuffer, sizeof(msgBuffer), 0);
-  if(recvRet == -1){
-    perror("recv in sendPutRequest");
-    return ERROR_PUT;
-  }
-  if(strcmp(msgBuffer, "NACK") == 0){
-    printf("No ACK from server received!\n");
-    return ERROR_PUT;
-  }
-*/
-
-  /*===== ACK vom Server erhalten beginne mit der Übertragung des Dateiinhalts =====*/
+  /*===== Beginne mit der Übertragung des Dateiinhalts =====*/
   memset(msgBuffer, 0, sizeof(msgBuffer));
   size_t bytesRead;
   while((bytesRead = fread(msgBuffer, sizeof(char), BUFFER_SIZE, file)) > 0){
@@ -262,7 +248,7 @@ int sendPutRequest(int socketFd, char *filename) {
       return ERROR_PUT;
     }
     if(strcmp(msgBuffer, "NACK") == 0){
-      printf("No ACK from server received!\n");
+      printf("No ACK from server received! Data was not written in file\n");
       return ERROR_PUT;
     }
   }
