@@ -135,7 +135,7 @@ void dealWithData(int socketFd)
     ssize_t recvRetVal;
     if ((recvRetVal = recv(socketFd, dataBuffer, sizeof(dataBuffer), 0)) > 0)
     {
-        printf("Received data from client on port %d: %s\n", getPortFromConnectedClient(socketFd), dataBuffer);
+        printf("Received data from client on port %d\n", getPortFromConnectedClient(socketFd));
         if(strncmp("Get ", dataBuffer, 4) == 0)
         {
             handleGet(dataBuffer, socketFd);
@@ -325,8 +325,7 @@ void handleGet(char *data, int socketFd)
  * Es wird der Inhalt der Datei <dateiname> der vom Client verschickt wurde auf dem Server gespeichert. 
  * Nach vollständigem Empfang und Speicherung der Datei wird mit einem OK, <Benutzte Server-IP-Adresse> und <Datum + Uhrzeit> 
  * das Put bestätigt. 
- * 
- * @return
+ *
 */
 void handlePut(char *data, int socketFd)
 {
@@ -343,17 +342,23 @@ void handlePut(char *data, int socketFd)
     printf("Command: %s\n", command);
     printf("Filename: %s\n", filename);
     /*===== Öffne ein File mit dem erhaltenen Filenamen =====*/
+    ssize_t recvRet;
+    ssize_t byteSent;
     FILE *file = fopen(filename, "a");
+    int retprintf;
     if(file == NULL){
         send(socketFd, "NACK", sizeof("NACK"),0);
         perror("fopen in handlePut");
         exit(EXIT_FAILURE);
     }
+    byteSent =  send(socketFd, "ACK", sizeof("ACK"), 0);
+    if(byteSent == -1){
+        perror("send in handlePut, while sending ACK to client");
+        fclose(file);
+        exit(EXIT_FAILURE);
+    }
     /*===== File konnte geöffnet werden, warte nun auf den Fileinhalt und schreib ihn das geöffnete File =====*/
     /*===== Schreibe so lange in das File bis das EOT beim Server ankommt =====*/
-    ssize_t recvRet;
-    ssize_t byteSent;
-    int retprintf;
     while((recvRet = recv(socketFd, filecontent, sizeof(msgBuffer), 0)) > 0)
     {
         /*===== Bestätige dem client den Erhalt des EOT Zeichens, damit wird Datenübertragun beendet =====*/
@@ -361,22 +366,23 @@ void handlePut(char *data, int socketFd)
             char eotRecvResponse[] = "EOT received. Ending transmission\n";
             byteSent = send(socketFd, eotRecvResponse, sizeof(eotRecvResponse), 0);
             if(byteSent == -1){
-                perror("send in handlePut");
+                perror("send in handlePut, while sending ACK for recv EOT");
                 fclose(file);
                 exit(EXIT_FAILURE);
             }
+            memset(msgBuffer, 0, sizeof(msgBuffer));
             break;
         }
         retprintf = fprintf(file, "%s", filecontent);
         /*===== Schicke ACK oder NACK um den Erhalt des ersten Datenblocks zu bestätigen =====*/
         char *ackOrNack = "ACK";
-        //-1 da fprintf die Anzahl an Zeichen return die geprintet wurde ohne das '\0'
-        if(retprintf == -1 || retprintf != recvRet-1){
+        printf("recvRet = %zd,  retprintf = %d\n", recvRet, retprintf);
+        if(retprintf == -1 || retprintf != recvRet){
             ackOrNack = "NACK";
         }
         byteSent = send(socketFd, ackOrNack, strlen(ackOrNack), 0);
         if(byteSent == -1){
-            perror("send in handlePut");
+            perror("send in handlePut, while sending ack or nack for recv filecontent");
             fclose(file);
             exit(EXIT_FAILURE);
         }

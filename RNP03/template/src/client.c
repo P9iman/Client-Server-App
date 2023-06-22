@@ -228,7 +228,20 @@ int sendPutRequest(int socketFd, char *filename) {
     fclose(file);
     return ERROR_PUT;
   }
+  /*===== Warte auf ein ACK vom server das Befehl und Filename korrekt angekommen sind =====*/
   ssize_t recvRet;
+  memset(msgBuffer, 0, sizeof(msgBuffer));
+  recvRet = recv(socketFd, msgBuffer, sizeof(msgBuffer), 0);
+  if(recvRet  == -1){
+    perror("recv in sendPutRequest, receiving ACK for command and filename");
+    fclose(file);
+    return ERROR_PUT;
+  }
+  if(strcmp(msgBuffer, "NACK") == 0){
+    printf("NACK from server! Command or filename was not correct!\n");
+    return ERROR_PUT;
+  }
+  /*===== Wenn hier angekommen, konnte Befehl und filname korrekt übertragen werden =====*/
   /*===== Beginne mit der Übertragung des Dateiinhalts =====*/
   memset(msgBuffer, 0, sizeof(msgBuffer));
   size_t bytesRead;
