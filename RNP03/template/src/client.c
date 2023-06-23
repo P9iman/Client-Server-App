@@ -22,12 +22,25 @@
 #define ERROR_LIST 4
 #define ERROR_QUIT 5
 
+/**
+ * @file client.c
+ * @brief Dieses Programm stellt einen Client dar, der mit einem Server kommuniziert.
+ * Es ermöglicht dem Benutzer, verschiedene Befehle an den Server zu senden,
+ * wie z.B. das Abrufen von Dateien, das Hochladen von Dateien, das Auflisten von Dateien usw.
+ * Der Client verwendet Sockets, um die Verbindung zum Server herzustellen und Daten auszutauschen.
+ * 
+ * @note
+ * Testdaten die mit Put und Get verschickt und geholt werden können befinden sich im Ordner Data. Dieser kann in den bin
+ * Ordner kopiert werden um den Pfad der Datei zuverkürzen. Für den Server macht es keinen Unterschied dieser parsed den Dateinamen. 
+ * Beim Get wird der Pfad nicht benötigt, da kann man einfach Get <Dateiname.txt> eingeben
+ */
+
+
 int sendGetRequest(int socketFd, char *filename);
 int sendPutRequest(int socketFd, char *filename);
 int sendFilesRequest(int socketFd);
 int sendListRequest(int socketFd);
 int sendQuitRequest(int socketFd);
-
 int convertAddressToString(struct sockaddr *, char *, size_t, int *);
 int getClientIpAddress(int, char *, size_t);
 
@@ -53,7 +66,7 @@ int main(int argc, char **argv) {
   memset(&hints, 0, sizeof hints);
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
-  hints.ai_protocol = IPPROTO_TCP;
+  //hints.ai_protocol = IPPROTO_TCP;
   /*===== Parse Server-Kontakt: also DNS-Name oder IPv4/IPv6 Adresse sowie Port des Servers =====*/
   if (argc != 3)
   {
@@ -123,6 +136,14 @@ int main(int argc, char **argv) {
   memset(input, 0, INPUT_SIZE);
   memset(filename, 0, FILENAME_SIZE);
   memset(command, 0, COMMAND_SIZE);
+
+
+  printf("Geben Sie 'Get <Dateiname>' ein, um eine Datei vom Server abzurufen.\n");
+  printf("Geben Sie 'Put <Dateiname>' ein, um eine Datei auf den Server hochzuladen.\n");
+  printf("Geben Sie 'Files' ein, um eine Liste der verfügbaren Dateien auf dem Server abzurufen.\n");
+  printf("Geben Sie 'List' ein, um alle verbundenen Clients aufzulisten.\n");
+  printf("Geben Sie 'Quit' ein, um die Verbindung zu beenden.\n\n");
+
   /**
    * In dieser while(1) Schleife werden die Befehle des Clienten
    * entgegengenommen
@@ -184,6 +205,12 @@ int main(int argc, char **argv) {
   return 0;
 }
 
+/**
+ * @brief Sendet eine GET-Anforderung an den Server, um eine Datei abzurufen.
+ * @param socketFd Der Socket-Dateideskriptor für die Verbindung zum Server.
+ * @param filename Der Name der abzurufenden Datei.
+ * @return 0 bei Erfolg, andernfalls ein Fehlercode.
+ */
 int sendGetRequest(int socketFd, char *filename) {
   /*===== Client sendet dem Server den Befehl und den Filenamen =====*/
   char buffer[BUFFER_SIZE];
@@ -261,6 +288,12 @@ int sendGetRequest(int socketFd, char *filename) {
   return EXIT_SUCCESS;
 }
 
+/**
+ * @brief Sendet eine PUT-Anforderung an den Server, um eine Datei hochzuladen.
+ * @param socketFd Der Socket-Dateideskriptor für die Verbindung zum Server.
+ * @param filename Der Name der hochzuladenden Datei.
+ * @return 0 bei Erfolg, andernfalls ein Fehlercode.
+ */
 int sendPutRequest(int socketFd, char *filename) {
   /*===== Öffne zunächst die Datei =====*/
   FILE *file = fopen(filename, "rb");
@@ -361,6 +394,11 @@ int sendPutRequest(int socketFd, char *filename) {
   return EXIT_SUCCESS;
 }
 
+/**
+ * @brief Sendet eine FILES-Anforderung an den Server, um eine Liste der verfügbaren Dateien abzurufen.
+ * @param socketFd Der Socket-Dateideskriptor für die Verbindung zum Server.
+ * @return 0 bei Erfolg, andernfalls ein Fehlercode.
+ */
 int sendFilesRequest(int socketFd) {
   char buffer[] = "Files";
   if (send(socketFd, buffer, strlen(buffer), 0) == -1) {
@@ -379,6 +417,11 @@ int sendFilesRequest(int socketFd) {
   return EXIT_SUCCESS;
 }
 
+/**
+ * @brief Sendet eine LIST-Anforderung an den Server, um eine Liste aktuell verbundender Clients abzurufen.
+ * @param socketFd Der Socket-Dateideskriptor für die Verbindung zum Server.
+ * @return 0 bei Erfolg, andernfalls ein Fehlercode.
+ */
 int sendListRequest(int socketFd) {
   char buffer[] = "List";
   if (send(socketFd, buffer, strlen(buffer), 0) == -1) {
@@ -397,6 +440,11 @@ int sendListRequest(int socketFd) {
   return EXIT_SUCCESS;
 }
 
+/**
+ * @brief Sendet eine QUIT-Anforderung an den Server, um die Verbindung zu beenden.
+ * @param socketFd Der Socket-Dateideskriptor für die Verbindung zum Server.
+ * @return 0 bei Erfolg, andernfalls ein Fehlercode.
+ */
 int sendQuitRequest(int socketFd) {
   char *buffer = {0};
   if (send(socketFd, buffer, 0, 0) == -1) {
@@ -408,6 +456,14 @@ int sendQuitRequest(int socketFd) {
   }
 }
 
+/**
+ * @brief Konvertiert eine Socket-Adresse in eine Zeichenkette.
+ * @param addr Die Socket-Adresse.
+ * @param ip Zeiger auf den Puffer, in den die Zeichenkette/IP-Adresse geschrieben wird.
+ * @param ipSize Größe des Puffers.
+ * @param port Zeiger auf den Speicherort, an dem der Port gespeichert wird.
+ * @return 0 bei Erfolg, -1 bei einem Fehler.
+ */
 int convertAddressToString(struct sockaddr *addr, char *ip, size_t ipSize,
                            int *port) {
   int returnValue = EXIT_SUCCESS;
@@ -437,6 +493,13 @@ int convertAddressToString(struct sockaddr *addr, char *ip, size_t ipSize,
   return returnValue;
 }
 
+/**
+ * @brief Ruft die IP-Adresse des Clients ab.
+ * @param socketFd Der Socket-Dateideskriptor für die Verbindung zum Server.
+ * @param ip Zeiger auf den Speicherort, an dem die IP-Adresse gespeichert wird.
+ * @return 0 bei Erfolg, -1 bei einem Fehler.
+ *  
+*/
 int getClientIpAddress(int socketFd, char *ip, size_t ipSize) {
   struct sockaddr_storage clientIPAddr;
   socklen_t clientIPAddrLen = sizeof(clientIPAddr);

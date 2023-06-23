@@ -23,6 +23,33 @@
 #define FILENAME_SIZE 100
 
 
+/**
+ * @file server.c
+ * @brief Ein Server-Modul zur Verwaltung von Dateien und Bereitstellung von Dateioperationen für Clients.
+ *
+ * Das Server-Modul ermöglicht es Clients, sich mit dem Server zu verbinden und verschiedene Dateioperationen
+ * durchzuführen, wie das Auflisten von Dateien, das Herunterladen von Dateien, das Hochladen von Dateien usw.
+ * Der Server arbeitet auf nicht blockierende Weise und kann gleichzeitig mehrere Clients bedienen.
+ * Das Modul stellt Funktionen bereit, um Anfragen von Clients zu verarbeiten und entsprechende Aktionen auszuführen.
+ *
+ * Die wichtigsten Funktionen des Moduls sind:
+ * - handleList: Behandelt die Anforderung des List-Befehls vom Client.
+ * - handleFiles: Behandelt die Anforderung des Files-Befehls vom Client.
+ * - handleGet: Behandelt die Anforderung des Get-Befehls vom Client.
+ * - handlePut: Behandelt die Anforderung des Put-Befehls vom Client.
+ * - getPortFromConnectedClient: Ruft den Port von dem verbundenen Client ab.
+ * - getHostname: Ruft den Hostnamen von der Socket-Adressstruktur ab.
+ * - get_port_and_ip_client: Ruft die IP-Adresse und den Port von dem Client-Socket ab.
+ *
+ * @note
+ * Bevor der Server gestartet wird sollte im bin Ordner ein Verzeichnis namens "ServerData" erstellt werden, da 
+ * die Dateien die der Server durch Put erhält dort speichert und bei einem Get dort aufsucht. 
+ * 
+ */
+
+
+
+
 void handleList(int socketFd);
 void handleFiles(int socketFd);
 void handleGet(char *arg, int socketFd);
@@ -44,7 +71,7 @@ int maxFd; /*der größte FD, wird für select benötigt*/
 typedef struct{
     char hostname[HOSTNAME_SIZE];
     int port;
-    int socketFd; //wenn kein client in dem arrayslot verbunden ist, ist socketFd = -1 
+    int socketFd; 
 }ClientInfo;
 ClientInfo connectedClients[MAX_CLIENTS]; 
 int numConnectedClients = 0;  
@@ -213,8 +240,8 @@ int main(int argc, char** argv)
   	memset(&hints, 0, sizeof hints); 
   	hints.ai_family = AF_UNSPEC; //Adress-Family ist unspezifiziert somit IPv4 und IPv6 möglich
 	hints.ai_socktype = SOCK_STREAM; 
-	//hints.ai_flags = AI_PASSIVE; //befüllt die IP Adresse fuer mich
-    hints.ai_protocol = IPPROTO_TCP; 
+	hints.ai_flags = AI_PASSIVE; //befüllt die IP Adresse fuer mich
+    //hints.ai_protocol = IPPROTO_TCP; 
 
 	if(argc > 2)
 	{
@@ -311,13 +338,11 @@ int main(int argc, char** argv)
 }
 
 /**
- * @brief Diese Funktion handled die Get Anfragen von den Clients. 
- * Es wird der Inhalt der angefragten Datei <dateiname> sowie <Datei-Attribute: last modified, size> 
- * vom Server zurückgegeben. 
- * 
- * @return 
- *  
-*/
+ * Behandelt die Anforderung des Get-Befehls vom Client.
+ *
+ * @param data      Die Get-Nachricht, die vom Client erhalten wurde.
+ * @param socketFd  Die Socket-Dateideskriptor.
+ */
 void handleGet(char *data, int socketFd)
 {
     /*===== Als erstes erhält der Server nur den Befehl und den Filenamen =====*/
@@ -443,12 +468,11 @@ void handleGet(char *data, int socketFd)
 }
 
 /**
- * @brief Diese Funktion handled die Put Anfragen der Clienten. 
- * Es wird der Inhalt der Datei <dateiname> der vom Client verschickt wurde auf dem Server gespeichert. 
- * Nach vollständigem Empfang und Speicherung der Datei wird mit einem OK, <Benutzte Server-IP-Adresse> und <Datum + Uhrzeit> 
- * das Put bestätigt. 
+ * Behandelt die Anforderung des Put-Befehls vom Client.
  *
-*/
+ * @param data      Die Put-Nachricht, die vom Client erhalten wurden.
+ * @param socketFd  Die Socket-Dateideskriptor.
+ */
 void handlePut(char *data, int socketFd)
 {
     /*===== Als erstes erhält der Server nur den Befehl und den Filenamen =====*/
@@ -554,13 +578,10 @@ void handlePut(char *data, int socketFd)
 }
 
 /**
- * @brief Diese Funktion handled die List Anfragen der Clienten. 
- * Beim list werden alle verbundenen Clients der Form: 
- * <Clienthostname>:<Clientport>
- * <N> Clients verbunden
- * ausgegeben. 
+ * Behandelt die Anforderung des List-Befehls vom Client.
  *
-*/
+ * @param socketFd Die Socket-Dateideskriptor.
+ */
 void handleList(int socketFd)
 {
     char buffer[BUFFER_SIZE];
@@ -585,14 +606,10 @@ void handleList(int socketFd)
 }
 
 /**
- * @brief Diese Funktion handled die Files Anfragen der Clienten. 
- * Bei Files wird eine Liste aller Dateien im Server-Verzeichnis in der Form: 
- * <Dateiname> <Datei-Attribute: last modified, size>
- * <N> Dateien
- * ausgegeben. 
- * 
- * @return
-*/
+ * Behandelt die Anforderung des Files-Befehls vom Client.
+ *
+ * @param socketFd Die Socket-Dateideskriptor.
+ */
 void handleFiles(int socketFd)
 {
     char buffer[BUFFER_SIZE];
@@ -662,8 +679,12 @@ void handleFiles(int socketFd)
 }
 
 /**
- * @brief Diese Hilfsfunktion dient dazu den Hostnamen abzurufen und in den Buffer char* hostname abzuspeichern.
-*/
+ * Ruft den Hostnamen von der Socket-Adressstruktur ab.
+ *
+ * @param addr        Die Socket-Adressstruktur.
+ * @param hostname    Der Puffer zum Speichern des Hostnamens.
+ * @param hostnameLen Die Länge des Hostnamen-Puffers.
+ */
 void getHostname(struct sockaddr *addr, char *hostname, int hostnameLen) 
 {
     int getnameinfoRetVal; 
@@ -678,6 +699,13 @@ void getHostname(struct sockaddr *addr, char *hostname, int hostnameLen)
     }
 }
 
+/**
+ * Ruft die IP-Adresse und den Port von dem Client-Socket ab.
+ *
+ * @param socketFd    Der Socket-Dateideskriptor des Clients.
+ * @param ipAddress   Der Puffer zum Speichern der IP-Adresse.
+ * @param port        Der Puffer zum Speichern der Portnummer.
+ */
 void get_port_and_ip_client(int socketFd, char *ipAddress, int *port)
 {
     struct sockaddr_storage addr; 
@@ -691,6 +719,13 @@ void get_port_and_ip_client(int socketFd, char *ipAddress, int *port)
     get_port_and_ip_helper(addr, ipAddress, port); 
 }
 
+/**
+ * Ruft die IP-Adresse und den Port von dem Server-Socket ab.
+ *
+ * @param socketFd    Der Socket-Dateideskriptor des Servers.
+ * @param ipAddress   Der Puffer zum Speichern der IP-Adresse.
+ * @param port        Der Puffer zum Speichern der Portnummer.
+ */
 void get_port_and_ip_server(int socketFd, char *ipAddress, int *port)
 {
     struct sockaddr_storage addr; 
@@ -724,6 +759,12 @@ void get_port_and_ip_helper(struct sockaddr_storage addr ,char *ipAddress, int *
     }
 }
 
+/**
+ * Ruft den Port von dem verbundenen Client ab.
+ *
+ * @param fd Der Dateideskriptor des verbundenen Clients.
+ * @return   Die Portnummer.
+ */
 int getPortFromConnectedClient(int fd)
 {
     int counter = 0;  

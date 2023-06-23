@@ -1,0 +1,6 @@
+make --dry-run --keep-going --print-directory
+make: Entering directory '/home/networker/Desktop/rn-exercise3-template/template'
+make: Leaving directory '/home/networker/Desktop/rn-exercise3-template/template'
+ 
+make: *** No targets specified and no makefile found.  Stop.
+
