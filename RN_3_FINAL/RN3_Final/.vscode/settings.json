@@ -1,9 +1,0 @@
-{
-    "makefile.extensionOutputFolder": "./.vscode",
-    "files.associations": {
-        "unistd.h": "c",
-        "socket.h": "c",
-        "netdb.h": "c",
-        "time.h": "c"
-    }
-}
