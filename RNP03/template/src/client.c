@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdio.h>
@@ -35,16 +36,16 @@ int main(int argc, char **argv) {
   char clientIP[INET6_ADDRSTRLEN];
   memset(serverIP, 0, sizeof(serverIP));
   memset(clientIP, 0, sizeof(clientIP));
-  char *port = NULL;
-  char *serverAddr = NULL;
+  char *port;
+  char *serverAddr;
   char msgBuffer[BUFFER_SIZE];
+  memset(msgBuffer, 0, sizeof(msgBuffer));
   ssize_t recvRetVal;
   int errorCode;
   //Über diesen Socket findet die Kommunikation mit dem Server statt
   int socketFd;
 
-  /*socket Konfiguration mit addrinfo und getaddrinfo() */
-
+  /*===== Socket Konfiguration mit addrinfo und getaddrinfo() =====*/
   int getaddrinfoRetVal;
   struct addrinfo *p;
   struct addrinfo hints;
@@ -53,9 +54,7 @@ int main(int argc, char **argv) {
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_protocol = IPPROTO_TCP;
-
-  /*Parse Server-Kontakt: also DNS-Name oder IPv4/IPv6 Adresse sowie Port des
-   * Servers*/
+  /*===== Parse Server-Kontakt: also DNS-Name oder IPv4/IPv6 Adresse sowie Port des Servers =====*/
   if (argc != 3)
   {
     printf("Connecting failed!\nUsage: ./client [DNS-Name or IPv4/IPv6 "
@@ -121,6 +120,9 @@ int main(int argc, char **argv) {
   char filename[FILENAME_SIZE];
   char command[COMMAND_SIZE];
   char *fgetsRetVal;
+  memset(input, 0, INPUT_SIZE);
+  memset(filename, 0, FILENAME_SIZE);
+  memset(command, 0, COMMAND_SIZE);
   /**
    * In dieser while(1) Schleife werden die Befehle des Clienten
    * entgegengenommen
@@ -163,6 +165,7 @@ int main(int argc, char **argv) {
       continue;
     }
     if (errorCode == 0) {
+/*
       // printf("Warte auf Response vom Server\n");
       recvRetVal = recv(socketFd, msgBuffer, BUFFER_SIZE, 0);
       if (recvRetVal < 0) {
@@ -172,6 +175,8 @@ int main(int argc, char **argv) {
         // Gib die Msg aus
         printf("%s", msgBuffer);
       }
+*/
+      continue ;
     } else {
       switch (errorCode) // NOLINT(hicpp-multiway-paths-covered)
       {
@@ -195,14 +200,88 @@ int main(int argc, char **argv) {
 }
 
 int sendGetRequest(int socketFd, char *filename) {
-  char msgBuffer[BUFFER_SIZE];
-  memset(msgBuffer, 0, BUFFER_SIZE);
-  // 1. send des Request
-  sprintf(msgBuffer, "Get %s", filename);
-  if (send(socketFd, msgBuffer, strlen(msgBuffer), 0) == -1) {
-    perror("send");
+  /*===== Client sendet dem Server den Befehl und den Filenamen =====*/
+  char buffer[BUFFER_SIZE];
+  memset(buffer, 0, BUFFER_SIZE);
+  sprintf(buffer, "Get %s", filename);
+  if (send(socketFd, buffer, strlen(buffer), 0) == -1) {
+    perror("send in sendGetRequest, while sending cmd and filename");
     return ERROR_GET;
   }
+  /*===== Warte auf ein ACK vom Server das Befehl und Filename erfolgreich angekommen sind =====*/
+  ssize_t recvRet;
+  ssize_t byteSent;
+  memset(buffer, 0, BUFFER_SIZE);
+  recvRet = recv(socketFd, buffer, sizeof(buffer), 0);
+  if(recvRet == -1){
+    perror("recv in sendGetRequest, while waiting for ACK from server");
+    return ERROR_GET;
+  }
+  if(strcmp(buffer, "NACK, File not found!") == 0){
+    printf("NACK from server! File does not exist on server!\n");
+    return ERROR_GET;
+  }
+  /*===== Sende dem Server Ready Signal damit Übertragung von Dateiattribute beginnt =====*/
+  memset(buffer, 0, sizeof(buffer));
+  byteSent = send(socketFd, "READY", sizeof("READY"), 0);
+  if(byteSent == -1){
+    perror("send in sendGetRequest, while sending READY signal to server");
+    return ERROR_GET;
+  }
+
+  /*===== Bereit für Datei-Attribute =====*/
+  memset(buffer, 0, sizeof(buffer));
+  recvRet = recv(socketFd, buffer, sizeof(buffer), 0);
+  if(recvRet == -1){
+    perror("recv in sendGetRequest, while waiting for file attributes from server");
+    return ERROR_GET;
+  }
+  /* Ausgabe der Dateiattribute */
+  printf("%s\n", buffer);
+  /*===== Sende Server ACK dafür das Datei-Attribute erhalten wurden =====*/
+  byteSent = send(socketFd, "ACK", sizeof("ACK"), 0);
+  if(byteSent == -1){
+    perror("send in sendGetRequest, while sending ACK for file attributes");
+    return ERROR_GET;
+  }
+
+  /*===== Bereit für Dateiinhalte =====*/
+  memset(buffer, 0, sizeof(buffer));
+  printf("Filecontent:\n");
+  while(1)
+  {
+    memset(buffer, 0, sizeof(buffer));
+    recvRet = recv(socketFd, buffer, sizeof(buffer), 0);
+    if(recvRet == 1 && buffer[0] == '\x04' ){
+      /*
+      char eotRecvResponse[] = "EOT received.\n";
+      byteSent = send(socketFd, eotRecvResponse, sizeof(eotRecvResponse), 0);
+      if(byteSent == -1){
+        perror("send in handlePut, while sending ACK for recv EOT");
+        return ERROR_GET;
+      }
+      memset(buffer, 0, sizeof(buffer));
+*/
+      break;
+    }
+    if(recvRet == -1){
+      byteSent = send(socketFd, "NACK", sizeof("NACK"), 0);
+      if(byteSent == -1){
+        perror("send in sendGetRequest, while sending NACK to server");
+      }
+      perror("recv in sendGetRequest, recv in while-loop");
+      return ERROR_GET;
+    }
+    //gebe den Inhalt der Datei aus
+    printf("%s", buffer);
+    /*===== Schicke ACK an Server um den Erhalt des ersten Datenblocks zu bestätigen =====*/
+    byteSent = send(socketFd, "ACK", sizeof("ACK"), 0);
+    if(byteSent == -1){
+      perror("send in sendGetRequest, while sending ack for recv filecontent");
+      return ERROR_GET;
+    }
+  }
+  printf("\n");
   return EXIT_SUCCESS;
 }
 
@@ -214,14 +293,14 @@ int sendPutRequest(int socketFd, char *filename) {
     return ERROR_PUT;
   }
   /*===== Sende zunächst nur den Befehl mit dem Filenamen =====*/
-  char msgBuffer[BUFFER_SIZE];
-  memset(msgBuffer, 0, sizeof(msgBuffer));
+  char buffer[BUFFER_SIZE];
+  memset(buffer, 0, sizeof(buffer));
   char command[] = "Put";
-  strncpy(msgBuffer, command, sizeof(msgBuffer));
-  strncat(msgBuffer, " ", sizeof(msgBuffer) - strlen(msgBuffer) -1);
-  strncat(msgBuffer, filename, sizeof(msgBuffer) - strlen(msgBuffer) -1);
-  ssize_t byteSent = send(socketFd, msgBuffer, strlen(msgBuffer), 0);
-  printf("Sent command and filename: %s\n", msgBuffer);
+  strncpy(buffer, command, sizeof(buffer));
+  strncat(buffer, " ", sizeof(buffer) - strlen(buffer) -1);
+  strncat(buffer, filename, sizeof(buffer) - strlen(buffer) -1);
+  ssize_t byteSent = send(socketFd, buffer, strlen(buffer), 0);
+  printf("Sent command and filename: %s\n", buffer);
 
   if(byteSent == -1){
     perror("send in sendPutRequest");
@@ -230,39 +309,53 @@ int sendPutRequest(int socketFd, char *filename) {
   }
   /*===== Warte auf ein ACK vom server das Befehl und Filename korrekt angekommen sind =====*/
   ssize_t recvRet;
-  memset(msgBuffer, 0, sizeof(msgBuffer));
-  recvRet = recv(socketFd, msgBuffer, sizeof(msgBuffer), 0);
+  memset(buffer, 0, sizeof(buffer));
+  recvRet = recv(socketFd, buffer, sizeof(buffer), 0);
   if(recvRet  == -1){
     perror("recv in sendPutRequest, receiving ACK for command and filename");
     fclose(file);
     return ERROR_PUT;
   }
-  if(strcmp(msgBuffer, "NACK") == 0){
+  if(strcmp(buffer, "NACK") == 0){
     printf("NACK from server! Command or filename was not correct!\n");
     return ERROR_PUT;
   }
   /*===== Wenn hier angekommen, konnte Befehl und filname korrekt übertragen werden =====*/
   /*===== Beginne mit der Übertragung des Dateiinhalts =====*/
-  memset(msgBuffer, 0, sizeof(msgBuffer));
-  size_t bytesRead;
-  while((bytesRead = fread(msgBuffer, sizeof(char), BUFFER_SIZE, file)) > 0){
-    byteSent = send(socketFd, msgBuffer, bytesRead, 0);
-    if(byteSent == -1){
-      perror("send in sendPutRequest");
+  memset(buffer, 0, sizeof(buffer));
+  size_t bytesRead = 1;
+  while(1){
+    bytesRead = fread(buffer, 1, BUFFER_SIZE-2, file);
+
+    if(ferror(file) != 0){
+      printf("Error reading file: %s\n", filename);
+      clearerr(file);
       fclose(file);
       return ERROR_PUT;
     }
-    printf("Tranmitted filecontent\n");
-    /*===== warte nach jeder Übertragung ein Datenblocks auf ein ACK um danach weiter zu machen=====*/
-    memset(msgBuffer, 0, sizeof(msgBuffer));
-    recvRet = recv(socketFd, msgBuffer, sizeof(msgBuffer), 0);
-    if(recvRet == -1){
-      perror("recv in sendPutRequest");
+    byteSent = send(socketFd, buffer, bytesRead, 0);
+    if(byteSent == -1){
+      perror("send in sendPutRequest, while sending filecontent");
+      fclose(file);
       return ERROR_PUT;
     }
-    if(strcmp(msgBuffer, "NACK") == 0){
+    printf("[Tranmitted filecontent]\n");
+    /*===== warte nach jeder Übertragung ein Datenblocks auf ein ACK um danach weiter zu machen=====*/
+    memset(buffer, 0, sizeof(buffer));
+    recvRet = recv(socketFd, buffer, sizeof(buffer), 0);
+    if(recvRet == -1){
+      perror("recv in sendPutRequest, while recv ACK for filecontent");
+      fclose(file);
+      return ERROR_PUT;
+    }
+    if(strcmp(buffer, "NACK") == 0){
       printf("No ACK from server received! Data was not written in file\n");
       return ERROR_PUT;
+    }
+    if(feof(file) != 0){
+      //EOF erreicht beende Datenübertragung
+      clearerr(file);
+      break;
     }
   }
   fclose(file);
@@ -270,45 +363,50 @@ int sendPutRequest(int socketFd, char *filename) {
   char eot = '\x04';
   byteSent = send(socketFd, &eot, sizeof(eot), 0);
   if(byteSent == -1){
-    perror("send in sendPutRequest");
+    perror("send in sendPutRequest, while sending eot");
     fclose(file);
     return ERROR_PUT;
   }
   /*===== Warte ein letzes Mal auf ACK, das der Server wirklich EOT erhalten hat =====*/
-  memset(msgBuffer, 0, sizeof(msgBuffer));
-  recvRet = recv(socketFd,msgBuffer, sizeof(msgBuffer), 0);
+  memset(buffer, 0, sizeof(buffer));
+  recvRet = recv(socketFd, buffer, sizeof(buffer), 0);
   if(recvRet == -1){
-    perror("recv in sendPutRequest");
+    perror("recv in sendPutRequest, while recv ACK for EOT");
     return ERROR_PUT;
   }
-  if(strcmp(msgBuffer, "NACK") == 0){
-    printf("No ACK from server received! EOT not received!\n");
+  /*===== Warte nun auf die Bestätigung der Speicherung der Datei  =====*/
+  memset(buffer, 0, sizeof(buffer));
+  recvRet = recv(socketFd, buffer, sizeof(buffer), 0);
+  if(recvRet == -1){
+    perror("recv in sendPutRequest, while recv response from client");
     return ERROR_PUT;
   }
+  printf("%s", buffer);
   return EXIT_SUCCESS;
 }
 
 int sendFilesRequest(int socketFd) {
-  char msgBuffer[] = "Files";
-  if (send(socketFd, msgBuffer, strlen(msgBuffer), 0) == -1) {
-    perror("send");
+  char buffer[] = "Files";
+  if (send(socketFd, buffer, strlen(buffer), 0) == -1) {
+    perror("send in sendFilesRequest");
     return ERROR_FILES;
   }
   return EXIT_SUCCESS;
 }
 
 int sendListRequest(int socketFd) {
-  char msgBuffer[] = "List";
-  if (send(socketFd, msgBuffer, strlen(msgBuffer), 0) == -1) {
-    perror("send");
+  char buffer[] = "List";
+  if (send(socketFd, buffer, strlen(buffer), 0) == -1) {
+    perror("send in sendListRequest");
     return ERROR_LIST;
   }
   return EXIT_SUCCESS;
 }
 
 int sendQuitRequest(int socketFd) {
-  char *msgBuffer = {0};
-  if (send(socketFd, msgBuffer, 0, 0) == -1) {
+  char *buffer = {0};
+  if (send(socketFd, buffer, 0, 0) == -1) {
+    perror("send in sendQuitRequest");
     return ERROR_QUIT;
   } else {
     close(socketFd);

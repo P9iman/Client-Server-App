@@ -101,4 +101,4 @@ src/CMakeFiles/server.dir/server.c.o: \
  /usr/include/x86_64-linux-gnu/bits/struct_stat.h /usr/include/fcntl.h \
  /usr/include/x86_64-linux-gnu/bits/fcntl.h \
  /usr/include/x86_64-linux-gnu/bits/fcntl-linux.h \
- /usr/include/x86_64-linux-gnu/bits/fcntl2.h
+ /usr/include/x86_64-linux-gnu/bits/fcntl2.h /usr/include/libgen.h

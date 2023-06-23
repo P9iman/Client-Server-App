@@ -5,20 +5,23 @@
 #include <stdlib.h>
 
 #include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/select.h>
-#include <netdb.h>
 #include <dirent.h>
-#include <sys/stat.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <libgen.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #define DEFAULT_PORT 0
 #define BUFFER_SIZE 256
 #define HOSTNAME_SIZE 50
 #define MAX_CLIENTS 10
+#define FILENAME_SIZE 100
+
 
 void handleList(int socketFd);
 void handleFiles(int socketFd);
@@ -175,7 +178,7 @@ void dealWithData(int socketFd)
         //Fehler beim Empfangen der Nachricht
         perror("recv in dealWithData");
         close(socketFd);
-        exit(EXIT_FAILURE);
+        return;
     }
 }
 
@@ -317,7 +320,126 @@ int main(int argc, char** argv)
 */
 void handleGet(char *data, int socketFd)
 {
-    //TODO implementieren!
+    /*===== Als erstes erhält der Server nur den Befehl und den Filenamen =====*/
+    printf("Received Get-Requst: %s\n", data);
+    char command[10];
+    char filename[FILENAME_SIZE];
+    char filecontent[BUFFER_SIZE];
+    char serverDataDir[] = "ServerData";
+    memset(filename, 0, sizeof(filename));
+    memset(filecontent, 0, sizeof(filecontent));
+    memset(command, 0, sizeof(command));
+    sscanf(data, "%s %s", command, filename);
+    printf("Filename: %s\n", filename);
+    /*===== Versuche die Datei in ServerData zu finden und zu öffnen =====*/
+    char filepathinServerData[FILENAME_MAX];
+    //snprintf(filepathinServerData, sizeof(filepathinServerData), "%s/%s", serverDataDir, filename);
+    sprintf(filepathinServerData, "%s/%s", serverDataDir, filename);
+    FILE *file = fopen(filepathinServerData, "r");
+    /*===== Sende NACK an client, File konnte nicht geöffnet werden =====*/
+    if(file == NULL){
+        send(socketFd, "NACK, File not found!", sizeof("NACK, File not found!"),0);
+        perror("fopen in handlePut");
+        return;
+    }
+    /*===== Sende ACK an client, File konnte geöffnet werden =====*/
+    ssize_t recvRet;
+    ssize_t byteSent;
+    byteSent =  send(socketFd, "ACK", sizeof("ACK"), 0);
+    if(byteSent == -1){
+        perror("send in handleGet, while sending ACK to client");
+        fclose(file);
+        exit(EXIT_FAILURE);
+    }
+
+    /*===== Warte auf das Ready Signal vom client um danach mit Übertragung von Datei-Attribute zu beginnen =====*/
+    char ready[10];
+    memset(ready, 0, sizeof(ready));
+    recvRet = recv(socketFd, ready, sizeof(ready), 0);
+    if(recvRet == -1){
+        perror("recv in handleGet, while waiting for client response if ready for data-attributes");
+        fclose(file);
+        exit(EXIT_FAILURE);
+    }
+
+    /*===== Sende Datei-Attribute an Client  =====*/
+    struct stat fileStat;
+    if(stat(filepathinServerData, &fileStat) == -1){
+        perror("stat in handleGet");
+        fclose(file);
+        exit(EXIT_FAILURE);
+    }
+    char attributeMsg[BUFFER_SIZE];
+    memset(attributeMsg, 0, sizeof(attributeMsg));
+    time_t modifiedTime = fileStat.st_mtim.tv_sec;
+    struct tm* modifiedTimeInfo = localtime(&modifiedTime);
+    char modifiedTimeString[100];
+    strftime(modifiedTimeString, sizeof(modifiedTimeString), "%d-%m-%Y %H:%M:%S", modifiedTimeInfo);
+    snprintf(attributeMsg, sizeof(attributeMsg), "Datei-Attribute: last modified: %s, size: %ld Bytes", modifiedTimeString, fileStat.st_size);
+
+    byteSent = send(socketFd, attributeMsg, sizeof(attributeMsg), 0);
+    if(byteSent == -1){
+        perror("send in handleGet, while sending file attributes");
+        fclose(file);
+        exit(EXIT_FAILURE);
+    }
+    /*===== Warte auf ACK vom Client =====*/
+    char ack[10];
+    memset(ack, 0, sizeof(ack));
+    recvRet = recv(socketFd, ack, sizeof(ack), 0);
+    if (recvRet == -1) {
+        perror("recv in handleGet, while waiting for ACK for file attributes");
+        fclose(file);
+        exit(EXIT_FAILURE);
+    }
+    if (strcmp(ack, "ACK") != 0) {
+        printf("No ACK from client received! File attributes were not acknowledged.\n");
+        fclose(file);
+        return;
+    }
+    /*===== Beginne mit der Übertragung des Dateiinhalts =====*/
+    size_t bytesRead = 1;
+    while(1){
+        bytesRead = fread(filecontent, 1, BUFFER_SIZE-2, file);
+        if(ferror(file) != 0){
+            printf("Error reading file: %s\n", filename);
+            clearerr(file);
+            fclose(file);
+            exit(EXIT_FAILURE);
+        }
+        byteSent = send(socketFd, filecontent, bytesRead,0);
+        if(byteSent == -1){
+                perror("send in sendPutRequest while sending filecontent to client");
+                fclose(file);
+                exit(EXIT_FAILURE);
+        }
+        /*===== warte nach jeder Übertragung ein Datenblocks auf ein ACK um danach weiter zu machen=====*/
+        memset(ack, 0, sizeof(ack));
+        recvRet = recv(socketFd, ack, sizeof(ack), 0);
+        if(recvRet == -1){
+            perror("recv in handleGet, while waiting for ACK recv datablock");
+            fclose(file);
+            exit(EXIT_FAILURE);
+        }
+        if(strcmp(ack, "NACK") == 0){
+            printf("No ACK from client received! Filecontent was not received\n");
+            exit(EXIT_FAILURE);
+        }
+        if(feof(file) != 0){
+            //EOF erreicht beende Datenübertragung
+            clearerr(file);
+            break;
+        }
+    }
+    fclose(file);
+    /*===== Die Datenübertragung des Dateiinhalts ist zuende schicke ein EOT Zeichen =====*/
+    char eot = '\x04';
+    byteSent = send(socketFd, &eot, sizeof(eot), 0);
+    if(byteSent == -1){
+        perror("send in handleGet, while sending eot");
+        fclose(file);
+        exit(EXIT_FAILURE);
+    }
 }
 
 /**
@@ -333,24 +455,29 @@ void handlePut(char *data, int socketFd)
     printf("Received Put-Request: %s\n", data);
     char command[10];
     char filepath[100];
+    char serverDataDir[] = "ServerData";
     char filecontent[BUFFER_SIZE];
     memset(filecontent, 0, sizeof(filecontent));
     memset(filepath, 0, sizeof(filepath));
     sscanf(data, "%s %s", command, filepath);
     //Parse nur den Filename und entferne den Pfad, da sonst fopen fehlschlägt
     char *filename = basename(filepath);
-    printf("Command: %s\n", command);
     printf("Filename: %s\n", filename);
-    /*===== Öffne ein File mit dem erhaltenen Filenamen =====*/
-    ssize_t recvRet;
-    ssize_t byteSent;
-    FILE *file = fopen(filename, "a");
+    /*===== Öffne ein File mit dem erhaltenen Filenamen im Verzeichnis "ServerData" =====*/
+    char filepathinServerData[FILENAME_MAX];
+    sprintf(filepathinServerData, "%s/%s", serverDataDir, filename);
+
+    //snprintf(filepathinServerData, sizeof(filepathinServerData), "%s/%s", serverDataDir, filename);
+    FILE *file = fopen(filepathinServerData, "a");
     int retprintf;
     if(file == NULL){
         send(socketFd, "NACK", sizeof("NACK"),0);
         perror("fopen in handlePut");
         exit(EXIT_FAILURE);
     }
+    /*===== Sende ACK an client das filename und Befehl korrekt erhalten wurde =====*/
+    ssize_t recvRet;
+    ssize_t byteSent;
     byteSent =  send(socketFd, "ACK", sizeof("ACK"), 0);
     if(byteSent == -1){
         perror("send in handlePut, while sending ACK to client");
@@ -359,43 +486,49 @@ void handlePut(char *data, int socketFd)
     }
     /*===== File konnte geöffnet werden, warte nun auf den Fileinhalt und schreib ihn das geöffnete File =====*/
     /*===== Schreibe so lange in das File bis das EOT beim Server ankommt =====*/
-    while((recvRet = recv(socketFd, filecontent, sizeof(msgBuffer), 0)) > 0)
+    while(1)
     {
+        memset(filecontent, 0, sizeof(filecontent));
+        recvRet = recv(socketFd, filecontent, sizeof(msgBuffer), 0);
+
         /*===== Bestätige dem client den Erhalt des EOT Zeichens, damit wird Datenübertragun beendet =====*/
         if(recvRet == 1 && filecontent[0] == '\x04'){
-            char eotRecvResponse[] = "EOT received. Ending transmission\n";
+            char eotRecvResponse[] = "EOT received\n";
             byteSent = send(socketFd, eotRecvResponse, sizeof(eotRecvResponse), 0);
             if(byteSent == -1){
                 perror("send in handlePut, while sending ACK for recv EOT");
                 fclose(file);
                 exit(EXIT_FAILURE);
             }
-            memset(msgBuffer, 0, sizeof(msgBuffer));
             break;
+        }
+        if(recvRet == -1){
+            byteSent = send(socketFd, "NACK", sizeof("NACK"), 0);
+            if(byteSent  == -1){
+                perror("send in handlePut, while sending NACK to client");
+            }
+            perror("recv in handlePut, recv in while-loop");
+            fclose(file);
+            return;
         }
         retprintf = fprintf(file, "%s", filecontent);
         /*===== Schicke ACK oder NACK um den Erhalt des ersten Datenblocks zu bestätigen =====*/
-        char *ackOrNack = "ACK";
-        printf("recvRet = %zd,  retprintf = %d\n", recvRet, retprintf);
+        char ackOrNack[10];
+        strncpy(ackOrNack, "ACK", strlen("ACK")+1);
         if(retprintf == -1 || retprintf != recvRet){
-            ackOrNack = "NACK";
+            strncpy(ackOrNack, "NACK", strlen("NACK")+1);
         }
-        byteSent = send(socketFd, ackOrNack, strlen(ackOrNack), 0);
+        byteSent = send(socketFd, ackOrNack, sizeof(ackOrNack), 0);
         if(byteSent == -1){
             perror("send in handlePut, while sending ack or nack for recv filecontent");
             fclose(file);
             exit(EXIT_FAILURE);
         }
-        printf("File Content (geprintet in das File):\n%s\n", filecontent);
         //Man könnte bei Erfolg von fprintf ein ACK schicken, aber ist nicht so wichtig
         memset(filecontent, 0, sizeof(filecontent));
     }
-    if(recvRet == -1){
-        perror("recv in handlePut, recv in while-loop");
-        exit(EXIT_FAILURE);
-    }
     fclose(file);
-	printf("Datei lokal auf den Server gespeichert.\n");
+	printf("Datei lokal auf dem Server gespeichert.\n");
     //erhöhe den Filescounter um den Befehl Files aktuell zu halten.
     filesCounter++;
 
@@ -413,7 +546,11 @@ void handlePut(char *data, int socketFd)
 	char timerString[80]; 
 	strftime(timerString, sizeof(timerString), "%d-%m-%Y %H:%M:%S", timeinfo);
 	snprintf(response, sizeof(response), " OK %s,\n Server IP: %s,\n Date: %s %s\n\n", serverHostname, serverIP, __DATE__, timerString);
-	send(socketFd, response, sizeof(response), 0);
+	byteSent =  send(socketFd, response, sizeof(response), 0);
+    if(byteSent == -1){
+        perror("send in handlePut, while sending response to client");
+        return;
+    }
 }
 
 /**
