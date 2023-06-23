@@ -39,7 +39,6 @@ char serverHostname[HOSTNAME_SIZE];
 int sfd_listener; /*sfd_listener = Socket-File-Diskreptor für listening*/
 fd_set read_fdset; /*in diesem Set mit File-Discreptoren sind die fds für die Sockets aus denen gelesen werden soll*/ 
 int maxFd; /*der größte FD, wird für select benötigt*/
-char msgBuffer[BUFFER_SIZE]; /*Buffer für die Nachricht des Clienten*/
 
 /*Struct um beim List Request einfach die Clienten zurückzugeben*/
 typedef struct{
@@ -200,6 +199,7 @@ void readSockets()
 
 int main(int argc, char** argv)
 {
+    char msgBuffer[BUFFER_SIZE]; /*Buffer für die Nachricht des Clienten*/
     int yes = 1; // for setsockopt() SO_REUSEADDR, below
     int selectRetVal; /*Hier drinn steht der RetVal von select, also die Anzahl an readable Sockets*/
     char serverIPAddress[INET6_ADDRSTRLEN];
@@ -489,7 +489,7 @@ void handlePut(char *data, int socketFd)
     while(1)
     {
         memset(filecontent, 0, sizeof(filecontent));
-        recvRet = recv(socketFd, filecontent, sizeof(msgBuffer), 0);
+        recvRet = recv(socketFd, filecontent, sizeof(filecontent), 0);
 
         /*===== Bestätige dem client den Erhalt des EOT Zeichens, damit wird Datenübertragun beendet =====*/
         if(recvRet == 1 && filecontent[0] == '\x04'){
@@ -563,21 +563,21 @@ void handlePut(char *data, int socketFd)
 */
 void handleList(int socketFd)
 {
+    char buffer[BUFFER_SIZE];
+    memset(buffer, 0, sizeof(buffer));
     int counterConnectedClients = 0;
-    strcpy(msgBuffer, "");
-
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
         if(connectedClients[i].socketFd != 0)
         {
             char clientInfo[BUFFER_SIZE];
             sprintf(clientInfo, "%s : %d\n",connectedClients[i].hostname, connectedClients[i].port);
-            strcat(msgBuffer, clientInfo);
+            strcat(buffer, clientInfo);
             counterConnectedClients++;
         }
     }
-    sprintf(msgBuffer + strlen(msgBuffer),"%d Client[s] verbunden\n", counterConnectedClients);
-    if(send(socketFd, msgBuffer, strlen(msgBuffer), 0) == -1)
+    sprintf(buffer + strlen(buffer),"%d Client[s] verbunden\n", counterConnectedClients);
+    if(send(socketFd, buffer, strlen(buffer), 0) == -1)
     {
         perror("send in handleList");
         exit(EXIT_FAILURE);
@@ -595,16 +595,17 @@ void handleList(int socketFd)
 */
 void handleFiles(int socketFd)
 {
+    char buffer[BUFFER_SIZE];
+    memset(buffer, 0, sizeof(buffer));
     if(filesCounter == 0){
-        sprintf(msgBuffer, "%d Datei[en]\n", filesCounter);
-        if(send(socketFd, msgBuffer, sizeof(msgBuffer), 0) == -1)
-        {
+        sprintf(buffer, "%d Datei[en]\n", filesCounter);
+        if(send(socketFd, buffer, sizeof(buffer), 0) == -1){
             perror("send in handleFiles");
             exit(EXIT_FAILURE);
         }
     }else
     {
-        char directory[] = ".";
+        char directory[] = "ServerData";
         DIR *dir;
         struct dirent *entry;
         struct stat file_stat;
@@ -639,19 +640,19 @@ void handleFiles(int socketFd)
                 // Letzte Änderungszeit
                 modified_time = localtime(&file_stat.st_mtime);
                 strftime(modified_time_str, sizeof(modified_time_str), "%Y-%m-%d %H:%M:%S", modified_time);
-                strcat(msgBuffer, entry->d_name);
-                strcat(msgBuffer, " : ");
-                strcat(msgBuffer, modified_time_str);
-                strcat(msgBuffer, " ");
-                sprintf(msgBuffer + strlen(msgBuffer), "%lld\n", (long long)file_stat.st_size);
+                strcat(buffer, entry->d_name);
+                strcat(buffer, " : ");
+                strcat(buffer, modified_time_str);
+                strcat(buffer, " ");
+                sprintf(buffer + strlen(buffer), "%lld\n", (long long)file_stat.st_size);
                 numFiles++;
             }
         }
-        sprintf(msgBuffer + strlen(msgBuffer), "%d Datei[en]\n", numFiles);
+        sprintf(buffer + strlen(buffer), "%d Datei[en]\n", numFiles);
         // Verzeichnis schließen
         closedir(dir);
 
-        if(send(socketFd, msgBuffer, sizeof(msgBuffer), 0) == -1)
+        if(send(socketFd, buffer, sizeof(buffer), 0) == -1)
         {
             perror("send in handleFiles()");
             exit(EXIT_FAILURE);

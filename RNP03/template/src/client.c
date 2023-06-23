@@ -164,38 +164,23 @@ int main(int argc, char **argv) {
       printf("Ungültiger Befehl!\n");
       continue;
     }
-    if (errorCode == 0) {
-/*
-      // printf("Warte auf Response vom Server\n");
-      recvRetVal = recv(socketFd, msgBuffer, BUFFER_SIZE, 0);
-      if (recvRetVal < 0) {
-        perror("recv Msg from Server");
-        return EXIT_FAILURE;
-      } else {
-        // Gib die Msg aus
-        printf("%s", msgBuffer);
-      }
-*/
-      continue ;
-    } else {
-      switch (errorCode) // NOLINT(hicpp-multiway-paths-covered)
-      {
-      case ERROR_LIST:
-        printf("List-Request konnte nicht geschickt werden!\n");
+    switch (errorCode) // NOLINT(hicpp-multiway-paths-covered)
+    {
+        case ERROR_LIST:
+            printf("List-Request konnte nicht geschickt werden!\n");
+            break;
+        case ERROR_FILES:
+            printf("Files-Request konnte nicht geschickt werden!\n");
         break;
-      case ERROR_FILES:
-        printf("Files-Request konnte nicht geschickt werden!\n");
+        case ERROR_PUT:
+            printf("Put-Request konnte nicht geschickt werden!\n");
         break;
-      case ERROR_PUT:
-        printf("Put-Request konnte nicht geschickt werden!\n");
+        case ERROR_GET:
+            printf("Get-Request konnte nicht geschickt werden!\n");
         break;
-      case ERROR_GET:
-        printf("Get-Request konnte nicht geschickt werden!\n");
-        break;
-      }
-      continue;
+        }
+        continue;
     }
-  }
   return 0;
 }
 
@@ -253,15 +238,6 @@ int sendGetRequest(int socketFd, char *filename) {
     memset(buffer, 0, sizeof(buffer));
     recvRet = recv(socketFd, buffer, sizeof(buffer), 0);
     if(recvRet == 1 && buffer[0] == '\x04' ){
-      /*
-      char eotRecvResponse[] = "EOT received.\n";
-      byteSent = send(socketFd, eotRecvResponse, sizeof(eotRecvResponse), 0);
-      if(byteSent == -1){
-        perror("send in handlePut, while sending ACK for recv EOT");
-        return ERROR_GET;
-      }
-      memset(buffer, 0, sizeof(buffer));
-*/
       break;
     }
     if(recvRet == -1){
@@ -391,6 +367,15 @@ int sendFilesRequest(int socketFd) {
     perror("send in sendFilesRequest");
     return ERROR_FILES;
   }
+  char filesBuffer[BUFFER_SIZE];
+  ssize_t recvRet;
+  memset(filesBuffer, 0, sizeof(filesBuffer));
+  recvRet = recv(socketFd, filesBuffer, sizeof(filesBuffer), 0);
+  if(recvRet == -1){
+    perror("recv in sendListRequst");
+    return ERROR_FILES;
+  }
+  printf("%s", filesBuffer);
   return EXIT_SUCCESS;
 }
 
@@ -400,6 +385,15 @@ int sendListRequest(int socketFd) {
     perror("send in sendListRequest");
     return ERROR_LIST;
   }
+  char listBuffer[BUFFER_SIZE];
+  ssize_t recvRet;
+  memset(listBuffer, 0, sizeof(listBuffer));
+  recvRet = recv(socketFd, listBuffer, sizeof(listBuffer), 0);
+  if(recvRet == -1){
+    perror("recv in sendListRequst");
+    return ERROR_LIST;
+  }
+  printf("%s", listBuffer);
   return EXIT_SUCCESS;
 }
 
