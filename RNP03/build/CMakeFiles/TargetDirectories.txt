@@ -1,0 +1,6 @@
+/home/paiman/Studium/Rechnernetze-Praktikum/RNP03/build/CMakeFiles/edit_cache.dir
+/home/paiman/Studium/Rechnernetze-Praktikum/RNP03/build/CMakeFiles/rebuild_cache.dir
+/home/paiman/Studium/Rechnernetze-Praktikum/RNP03/build/src/CMakeFiles/client.dir
+/home/paiman/Studium/Rechnernetze-Praktikum/RNP03/build/src/CMakeFiles/server.dir
+/home/paiman/Studium/Rechnernetze-Praktikum/RNP03/build/src/CMakeFiles/edit_cache.dir
+/home/paiman/Studium/Rechnernetze-Praktikum/RNP03/build/src/CMakeFiles/rebuild_cache.dir

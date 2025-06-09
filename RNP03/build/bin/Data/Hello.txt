@@ -1,0 +1,3 @@
+Moin Moin, das ist ein Text den ich nun von dem Client an den Server schicke.
+Ich teste hier bis zu wieviele Bytes versendet werden können bzw. der server handlen kann, bis es
+zum stack-overflow kommt.

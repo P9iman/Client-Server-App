@@ -226,6 +226,15 @@ void readSockets()
 
 int main(int argc, char** argv)
 {
+    // ServerData-Verzeichnis im aktuellen Arbeitsverzeichnis anlegen, falls nicht vorhanden
+    struct stat st = {0};
+    if (stat("ServerData", &st) == -1) {
+        if (mkdir("ServerData", 0700) == -1) {
+            perror("mkdir ServerData");
+            exit(EXIT_FAILURE);
+        }
+    }
+
     char msgBuffer[BUFFER_SIZE]; /*Buffer für die Nachricht des Clienten*/
     int yes = 1; // for setsockopt() SO_REUSEADDR, below
     int selectRetVal; /*Hier drinn steht der RetVal von select, also die Anzahl an readable Sockets*/
