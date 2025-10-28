@@ -15,6 +15,7 @@
 #define INPUT_SIZE 200
 #define COMMAND_SIZE 7
 #define FILENAME_SIZE 100
+#define CLIENT_DATA_DIR "ClientData"
 
 #define ERROR_GET 1
 #define ERROR_PUT 2
@@ -161,20 +162,26 @@ int main(int argc, char **argv) {
     // Befehl überprüfen und entsprechende Aktion ausführen
     if (strcmp(command, "List") == 0) {
       errorCode = sendListRequest(socketFd);
+    
     } else if (strcmp(command, "Get") == 0) {
       if (strlen(filename) == 0) {
         printf("Bitte geben Sie einen Dateinamen ein!\n");
         continue;
       }
       errorCode = sendGetRequest(socketFd, filename);
+      memset(filename, 0, FILENAME_SIZE);
+    
     } else if (strcmp(command, "Put") == 0) {
       if (strlen(filename) == 0) {
         printf("Bitte geben Sie einen Dateinamen ein!\n");
         continue;
       }
       errorCode = sendPutRequest(socketFd, filename);
+      memset(filename, 0, FILENAME_SIZE);
+    
     } else if (strcmp(command, "Files") == 0) {
       errorCode = sendFilesRequest(socketFd);
+    
     } else if (strcmp(command, "Quit") == 0) {
       if (sendQuitRequest(socketFd) == ERROR_QUIT) {
         printf("Quit-Request konnte nicht geschickt werden!\n");
@@ -295,8 +302,13 @@ int sendGetRequest(int socketFd, char *filename) {
  * @return 0 bei Erfolg, andernfalls ein Fehlercode.
  */
 int sendPutRequest(int socketFd, char *filename) {
+  
   /*===== Öffne zunächst die Datei =====*/
-  FILE *file = fopen(filename, "rb");
+  char clientDataPath[50]; 
+  memset(clientDataPath, 0, sizeof(clientDataPath));
+  sprintf(clientDataPath, "%s/%s", CLIENT_DATA_DIR, filename);
+
+  FILE *file = fopen(clientDataPath, "rb");
   if (file == NULL) {
     perror("fopen in sendPutRequest");
     return ERROR_PUT;

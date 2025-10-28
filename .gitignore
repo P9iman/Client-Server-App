@@ -1,0 +1,18 @@
+# CMake build folders
+/build/
+/build-*/
+
+# Compiled binaries
+*.o
+*.a
+*.so
+*.exe
+*.out
+
+# CMake-generated files
+CMakeCache.txt
+CMakeFiles/
+
+# IDE files
+.vscode/
+.idea/
