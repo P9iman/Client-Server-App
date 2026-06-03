@@ -1,4 +1,4 @@
-# RN Client-server
+# Client-server
 
 ## Build
 
