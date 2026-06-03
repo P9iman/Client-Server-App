@@ -1,4 +1,4 @@
-# Client-server
+# Client-server App
 
 ## Build
 
